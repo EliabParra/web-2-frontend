@@ -6,7 +6,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react'
-import { login as apiLogin, logout as apiLogout } from '@/api/auth'
+import { login as apiLogin, logout as apiLogout, checkSession } from '@/api/auth'
 import type { AuthContextValue, LoginCredentials, UserSummary, Session } from '@/types/auth'
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -46,14 +46,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const refreshUser = useCallback(async () => {
     setIsLoading(true)
     try {
-      // In a real app, you'd call an endpoint to get current user
-      // For now, we rely on the session cookie
+      const response = await checkSession()
+      if (response) {
+        setUser(response.user)
+        setSession(response.session)
+      } else {
+        setUser(null)
+        setSession(null)
+      }
     } catch {
       setUser(null)
+      setSession(null)
     } finally {
       setIsLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    refreshUser()
+  }, [refreshUser])
 
   useEffect(() => {
     const handleUnauthorized = () => {

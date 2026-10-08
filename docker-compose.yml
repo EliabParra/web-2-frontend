@@ -1,0 +1,17 @@
+name: uru-frontend-prod
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: toproc-frontend-prod
+    ports:
+      - "80:80"
+    networks:
+      - uru_network
+    restart: always
+
+networks:
+  uru_network:
+    external: true

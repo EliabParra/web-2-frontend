@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance, type AxiosError } from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 export const CSRF_TOKEN_HEADER = 'x-csrf-token'
 export const CSRF_TOKEN_COOKIE = 'csrf_token'
