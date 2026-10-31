@@ -6,6 +6,10 @@ Interfaz web (React + Vite + shadcn/ui) del sistema de inventario de componentes
 
 Este repositorio no se instala por separado: el instalador del backend descarga los dos repositorios, compila el frontend y lo sirve en el mismo puerto que la API. Instrucciones en el [README del backend](https://github.com/EliabParra/web-2-backend#instalar).
 
+## Actualizar
+
+Las instalaciones se actualizan ejecutando el mismo comando de instalación del backend: descarga lo último de `master` de los dos repositorios y conserva los datos. Si agregas un método nuevo en un BO del backend, su número de transacción va en `scripts/db/tx-map.json` (backend) y en `src/api/tx.ts` (aquí), con el mismo valor. Reglas completas en la [guía de desarrollo del backend](https://github.com/EliabParra/web-2-backend/blob/master/docs/DEV.md#cambios-que-llegan-a-instalaciones-existentes).
+
 ## Desarrollar
 
 Requisitos: Node.js 20+ y npm.
