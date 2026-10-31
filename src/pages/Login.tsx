@@ -21,7 +21,7 @@ const Login = () => {
     setLoading(true);
     try {
       await login(user, clave);
-      navigate("/dashboard");
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Credenciales inválidas. Intente de nuevo.");
     } finally {

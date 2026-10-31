@@ -1,6 +1,6 @@
 import { ReactNode, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import URULogo from "./URULogo";
 import NotificationsPanel from "./NotificationsPanel";
 import BackButton from "./BackButton";
@@ -88,7 +88,12 @@ const negocioModules = [
 const DashboardLayout = ({ children }: { children?: ReactNode }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [activeItem, setActiveItem] = useState<string>("");
+  // The active module lives in the URL (?m=key) so the browser back/forward buttons move between modules.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeItem = searchParams.get("m") ?? "";
+  const setActiveItem = (key: string) => {
+    if (key !== activeItem) setSearchParams(key ? { m: key } : {});
+  };
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (!user) return null;
@@ -117,7 +122,7 @@ const DashboardLayout = ({ children }: { children?: ReactNode }) => {
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-foreground" onClick={() => setActiveItem("seg_perfil")}>Ver Perfil</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => logout().then(() => navigate("/login"))} className="text-destructive">
+              <DropdownMenuItem onClick={() => logout().then(() => navigate("/login", { replace: true }))} className="text-destructive">
                 <LogOut className="w-4 h-4 mr-2" />Cerrar Sesión
               </DropdownMenuItem>
             </DropdownMenuContent>

@@ -18,6 +18,12 @@ const RequireAuth = ({ children }: { children: JSX.Element }) => {
   return user ? children : <Navigate to="/login" replace />;
 };
 
+// Logged-in users never see the guest pages again (e.g. pressing Back after logging in).
+const GuestOnly = ({ children }: { children: JSX.Element }) => {
+  const { user } = useAuth();
+  return user ? <Navigate to="/dashboard" replace /> : children;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -28,9 +34,9 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Navigate to="/login" replace />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
+              <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />
+              <Route path="/forgot-password" element={<GuestOnly><ForgotPassword /></GuestOnly>} />
               <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
