@@ -2,61 +2,165 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, Filter, Download } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Search, Filter, Download, Plus, Pencil, PackagePlus, Trash2 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { TX } from "@/api/tx";
+import { runTx, useTx } from "@/hooks/useTx";
 
-interface ComponenteInventario {
-  codigo: string;
-  nombre: string;
-  cantidad: number;
-  ubicacion: string;
-  estado: "disponible" | "prestado" | "mantenimiento" | "agotado";
+// Category type 2 = "Componente" in the backend seed (1 = "Equipo").
+const COMPONENT_TYPE = { category_type_id: 2 };
+const NEW_COMPONENT = "new";
+
+interface InventarioRow {
+  inventory_id: number;
+  inventory_qt: number;
+  item_id: number;
+  item_cod: number;
+  item_na: string;
+  location_id: number;
+  location_de: string;
+  location_sh: number;
+  location_dr: number;
 }
+interface Componente { item_id: number; item_cod: number; item_na: string; category_id: number }
+interface Categoria { category_id: number; category_de: string }
+interface Ubicacion { location_id: number; location_de: string; location_sh: number; location_dr: number }
 
-const mockInventario: ComponenteInventario[] = [
-  { codigo: "RES-001", nombre: "Resistencia 1kΩ", cantidad: 150, ubicacion: "Estante A-1", estado: "disponible" },
-  { codigo: "CAP-002", nombre: "Capacitor 100µF", cantidad: 80, ubicacion: "Estante A-2", estado: "disponible" },
-  { codigo: "LED-003", nombre: "LED Rojo 5mm", cantidad: 200, ubicacion: "Estante B-1", estado: "disponible" },
-  { codigo: "TRA-004", nombre: "Transistor 2N2222", cantidad: 0, ubicacion: "Estante B-3", estado: "agotado" },
-  { codigo: "PRO-005", nombre: "Protoboard 830 puntos", cantidad: 5, ubicacion: "Gabinete C-1", estado: "prestado" },
-  { codigo: "MUL-006", nombre: "Multímetro Digital", cantidad: 10, ubicacion: "Gabinete D-1", estado: "disponible" },
-  { codigo: "OSC-007", nombre: "Osciloscopio Rigol", cantidad: 2, ubicacion: "Mesa Central", estado: "mantenimiento" },
-  { codigo: "CAB-008", nombre: "Cable Jumper M-M", cantidad: 300, ubicacion: "Estante A-3", estado: "disponible" },
-  { codigo: "FUE-009", nombre: "Fuente de Poder 12V", cantidad: 8, ubicacion: "Gabinete D-2", estado: "prestado" },
-  { codigo: "ARD-010", nombre: "Arduino UNO R3", cantidad: 15, ubicacion: "Gabinete C-2", estado: "disponible" },
-];
+type Estado = "disponible" | "agotado";
+type Form = {
+  item_id: string;
+  item_cod: string;
+  item_na: string;
+  category_id: string;
+  location_id: string;
+  inventory_qt: string;
+};
+type DialogState =
+  | { mode: "create" | "edit"; row?: InventarioRow; form: Form }
+  | { mode: "stock"; row: InventarioRow; quantity: string };
 
-const estadoBadge: Record<ComponenteInventario["estado"], string> = {
+const estadoBadge: Record<Estado, string> = {
   disponible: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  prestado: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  mantenimiento: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   agotado: "bg-red-500/20 text-red-400 border-red-500/30",
 };
 
+const estadoDe = (row: InventarioRow): Estado => (row.inventory_qt > 0 ? "disponible" : "agotado");
+const ubicacionDe = (u: Ubicacion) => `${u.location_de} (E${u.location_sh}-G${u.location_dr})`;
+
+const emptyForm: Form = { item_id: NEW_COMPONENT, item_cod: "", item_na: "", category_id: "", location_id: "", inventory_qt: "1" };
+
+function exportCsv(rows: InventarioRow[]) {
+  const lines = [
+    "Código,Componente,Cantidad,Ubicación",
+    ...rows.map((r) => [r.item_cod, `"${r.item_na}"`, r.inventory_qt, `"${ubicacionDe(r)}"`].join(",")),
+  ];
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  link.download = "inventario.csv";
+  link.click();
+}
+
 const InventarioModule = () => {
+  const inventario = useTx<InventarioRow[]>(TX.inventory.getAll, COMPONENT_TYPE);
+  const componentes = useTx<Componente[]>(TX.component.getAll);
+  const categorias = useTx<Categoria[]>(TX.category.getAll, COMPONENT_TYPE);
+  const ubicaciones = useTx<Ubicacion[]>(TX.location.getAll);
   const [search, setSearch] = useState("");
   const [filtroEstado, setFiltroEstado] = useState<string>("todos");
+  const [dialog, setDialog] = useState<DialogState | null>(null);
 
-  const filtered = mockInventario.filter((item) => {
-    const matchSearch =
-      item.nombre.toLowerCase().includes(search.toLowerCase()) ||
-      item.codigo.toLowerCase().includes(search.toLowerCase());
-    const matchEstado = filtroEstado === "todos" || item.estado === filtroEstado;
-    return matchSearch && matchEstado;
+  const rows = inventario.data ?? [];
+  const filtered = rows.filter((item) => {
+    const text = `${item.item_na} ${item.item_cod}`.toLowerCase();
+    return text.includes(search.toLowerCase()) && (filtroEstado === "todos" || estadoDe(item) === filtroEstado);
   });
+
+  const reloadAll = () => {
+    inventario.reload();
+    componentes.reload();
+  };
+  const close = () => setDialog(null);
+
+  const openEdit = (row: InventarioRow) => {
+    const component = componentes.data?.find((c) => c.item_id === row.item_id);
+    setDialog({
+      mode: "edit",
+      row,
+      form: {
+        item_id: String(row.item_id),
+        item_cod: String(row.item_cod),
+        item_na: row.item_na,
+        category_id: String(component?.category_id ?? ""),
+        location_id: String(row.location_id),
+        inventory_qt: String(row.inventory_qt),
+      },
+    });
+  };
+
+  const saveComponent = async (form: Form): Promise<number | undefined> => {
+    const fields = { item_cod: form.item_cod, item_na: form.item_na, category_id: form.category_id };
+    if (form.item_id === NEW_COMPONENT) {
+      const created = await runTx<Componente>(TX.component.create, fields, "Componente creado");
+      return created?.data.item_id;
+    }
+    const updated = await runTx(TX.component.update, { item_id: form.item_id, ...fields }, "Componente actualizado");
+    return updated && Number(form.item_id);
+  };
+
+  const saveForm = async () => {
+    if (dialog?.mode !== "create" && dialog?.mode !== "edit") return;
+    const { form, row } = dialog;
+    const isNewOrEdited = form.item_id === NEW_COMPONENT || dialog.mode === "edit";
+    const itemId = isNewOrEdited ? await saveComponent(form) : Number(form.item_id);
+    if (!itemId) return;
+
+    const ok = row
+      ? await runTx(TX.inventory.update, { inventory_id: row.inventory_id, inventory_qt: form.inventory_qt, location_id: form.location_id }, "Inventario actualizado")
+      : await runTx(TX.inventory.create, { item_id: itemId, location_id: form.location_id, inventory_qt: form.inventory_qt }, "Inventario registrado");
+    if (!ok) return;
+    close();
+    reloadAll();
+  };
+
+  const changeStock = async (txId: number, message: string) => {
+    if (dialog?.mode !== "stock") return;
+    if (!(await runTx(txId, { inventory_id: dialog.row.inventory_id, quantity: dialog.quantity }, message))) return;
+    close();
+    reloadAll();
+  };
+
+  const darDeBaja = async (row: InventarioRow) => {
+    if (!window.confirm(`¿Dar de baja "${row.item_na}"? Su cantidad quedará en 0.`)) return;
+    if (await runTx(TX.inventory.delete, { inventory_id: row.inventory_id }, "Inventario dado de baja")) reloadAll();
+  };
+
+  const setField = (field: keyof Form, value: string) =>
+    dialog && dialog.mode !== "stock" && setDialog({ ...dialog, form: { ...dialog.form, [field]: value } });
+
+  const form = dialog && dialog.mode !== "stock" ? dialog.form : null;
+  const showComponentFields = form && (form.item_id === NEW_COMPONENT || dialog?.mode === "edit");
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-foreground">Inventario de Componentes</h2>
-        <Button variant="outline" size="sm" className="gap-2">
-          <Download className="w-4 h-4" /> Exportar
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => exportCsv(filtered)}>
+            <Download className="w-4 h-4" /> Exportar
+          </Button>
+          <Button size="sm" className="gap-2" onClick={() => setDialog({ mode: "create", form: emptyForm })}>
+            <Plus className="w-4 h-4" /> Nuevo
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -77,12 +181,12 @@ const InventarioModule = () => {
           <SelectContent>
             <SelectItem value="todos">Todos</SelectItem>
             <SelectItem value="disponible">Disponible</SelectItem>
-            <SelectItem value="prestado">Prestado</SelectItem>
-            <SelectItem value="mantenimiento">Mantenimiento</SelectItem>
             <SelectItem value="agotado">Agotado</SelectItem>
           </SelectContent>
         </Select>
       </div>
+
+      {inventario.error && <p className="text-destructive text-sm">{inventario.error}</p>}
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <Table>
@@ -93,25 +197,37 @@ const InventarioModule = () => {
               <TableHead className="text-center">Cantidad</TableHead>
               <TableHead>Ubicación</TableHead>
               <TableHead className="text-center">Estado</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((item) => (
-              <TableRow key={item.codigo} className="border-border">
-                <TableCell className="font-mono text-accent">{item.codigo}</TableCell>
-                <TableCell className="font-medium">{item.nombre}</TableCell>
-                <TableCell className="text-center">{item.cantidad}</TableCell>
-                <TableCell className="text-muted-foreground">{item.ubicacion}</TableCell>
+              <TableRow key={item.inventory_id} className="border-border">
+                <TableCell className="font-mono text-accent">{item.item_cod}</TableCell>
+                <TableCell className="font-medium">{item.item_na}</TableCell>
+                <TableCell className="text-center">{item.inventory_qt}</TableCell>
+                <TableCell className="text-muted-foreground">{ubicacionDe(item)}</TableCell>
                 <TableCell className="text-center">
-                  <Badge variant="outline" className={estadoBadge[item.estado]}>
-                    {item.estado.charAt(0).toUpperCase() + item.estado.slice(1)}
+                  <Badge variant="outline" className={estadoBadge[estadoDe(item)]}>
+                    {estadoDe(item) === "disponible" ? "Disponible" : "Agotado"}
                   </Badge>
+                </TableCell>
+                <TableCell className="text-right whitespace-nowrap">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Stock" onClick={() => setDialog({ mode: "stock", row: item, quantity: "1" })}>
+                    <PackagePlus className="w-4 h-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Editar" onClick={() => openEdit(item)}>
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" aria-label="Dar de baja" onClick={() => darDeBaja(item)}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+            {!inventario.loading && filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                   No se encontraron componentes.
                 </TableCell>
               </TableRow>
@@ -121,8 +237,98 @@ const InventarioModule = () => {
       </div>
 
       <p className="text-xs text-muted-foreground text-right">
-        Mostrando {filtered.length} de {mockInventario.length} componentes
+        Mostrando {filtered.length} de {rows.length} registros
       </p>
+
+      <Dialog open={form !== null} onOpenChange={(open) => !open && close()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{dialog?.mode === "edit" ? "Editar inventario" : "Registrar en inventario"}</DialogTitle>
+          </DialogHeader>
+          {form && (
+            <div className="space-y-4">
+              {dialog?.mode === "create" && (
+                <div className="space-y-2">
+                  <Label>Componente</Label>
+                  <Select value={form.item_id} onValueChange={(v) => setField("item_id", v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NEW_COMPONENT}>+ Nuevo componente</SelectItem>
+                      {componentes.data?.map((c) => (
+                        <SelectItem key={c.item_id} value={String(c.item_id)}>{c.item_cod} — {c.item_na}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {showComponentFields && (
+                <>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="item_cod">Código</Label>
+                      <Input id="item_cod" type="number" min={1} value={form.item_cod} onChange={(e) => setField("item_cod", e.target.value)} />
+                    </div>
+                    <div className="space-y-2 col-span-2">
+                      <Label htmlFor="item_na">Nombre</Label>
+                      <Input id="item_na" value={form.item_na} onChange={(e) => setField("item_na", e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Categoría</Label>
+                    <Select value={form.category_id} onValueChange={(v) => setField("category_id", v)}>
+                      <SelectTrigger><SelectValue placeholder="Seleccione una categoría" /></SelectTrigger>
+                      <SelectContent>
+                        {categorias.data?.map((c) => (
+                          <SelectItem key={c.category_id} value={String(c.category_id)}>{c.category_de}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2 col-span-2">
+                  <Label>Ubicación</Label>
+                  <Select value={form.location_id} onValueChange={(v) => setField("location_id", v)}>
+                    <SelectTrigger><SelectValue placeholder="Seleccione una ubicación" /></SelectTrigger>
+                    <SelectContent>
+                      {ubicaciones.data?.map((u) => (
+                        <SelectItem key={u.location_id} value={String(u.location_id)}>{ubicacionDe(u)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="inventory_qt">Cantidad</Label>
+                  <Input id="inventory_qt" type="number" min={0} value={form.inventory_qt} onChange={(e) => setField("inventory_qt", e.target.value)} />
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={close}>Cancelar</Button>
+            <Button onClick={saveForm}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialog?.mode === "stock"} onOpenChange={(open) => !open && close()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stock: {dialog?.row?.item_na}</DialogTitle>
+          </DialogHeader>
+          {dialog?.mode === "stock" && (
+            <div className="space-y-2">
+              <Label htmlFor="quantity">Cantidad (actual: {dialog.row.inventory_qt})</Label>
+              <Input id="quantity" type="number" min={1} value={dialog.quantity} onChange={(e) => setDialog({ ...dialog, quantity: e.target.value })} />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => changeStock(TX.inventory.removeStock, "Stock retirado")}>Retirar</Button>
+            <Button onClick={() => changeStock(TX.inventory.addStock, "Stock agregado")}>Agregar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
