@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { IntegerInput } from "@/components/ui/integer-input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -113,7 +114,7 @@ const SolicitudesModule = () => {
               </div>
               <div className="space-y-2">
                 <Label>Cantidad</Label>
-                <Input type="number" min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
+                <IntegerInput min="1" value={cantidad} onChange={(e) => setCantidad(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>Motivo</Label>

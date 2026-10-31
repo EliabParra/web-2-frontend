@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { IntegerInput } from "@/components/ui/integer-input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -207,7 +208,7 @@ const MantenimientoModule = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Código *</Label>
-                  <Input type="number" min={1} value={form.item_cod} onChange={(e) => setForm({ ...form, item_cod: e.target.value })} placeholder="Ej: 1001" />
+                  <IntegerInput min={1} value={form.item_cod} onChange={(e) => setForm({ ...form, item_cod: e.target.value })} placeholder="Ej: 1001" />
                 </div>
                 <div className="space-y-2">
                   <Label>Tipo</Label>

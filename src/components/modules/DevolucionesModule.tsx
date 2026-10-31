@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { IntegerInput } from "@/components/ui/integer-input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { PackageSearch, Search, CheckCircle, AlertTriangle, Clock } from "lucide-react";
@@ -103,8 +104,7 @@ export const RegistrarDevolucionDialog = ({ movementId, usuario, onClose, onDone
               </div>
               <div className="space-y-2">
                 <Label>Cantidad devuelta (máx: {l.movement_detail_am})</Label>
-                <Input
-                  type="number"
+                <IntegerInput
                   min={0}
                   max={l.movement_detail_am}
                   value={cantidades[l.movement_detail_id] ?? String(l.movement_detail_am)}

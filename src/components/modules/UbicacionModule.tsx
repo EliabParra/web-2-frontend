@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { MapPin, Search, Layers, Box, Plus, Pencil, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { IntegerInput } from "@/components/ui/integer-input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -131,11 +132,11 @@ const UbicacionModule = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="location_sh">Estante</Label>
-                  <Input id="location_sh" type="number" min={1} value={form.location_sh} onChange={(e) => setForm({ ...form, location_sh: e.target.value })} />
+                  <IntegerInput id="location_sh" min={1} value={form.location_sh} onChange={(e) => setForm({ ...form, location_sh: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="location_dr">Gaveta</Label>
-                  <Input id="location_dr" type="number" min={1} value={form.location_dr} onChange={(e) => setForm({ ...form, location_dr: e.target.value })} />
+                  <IntegerInput id="location_dr" min={1} value={form.location_dr} onChange={(e) => setForm({ ...form, location_dr: e.target.value })} />
                 </div>
               </div>
             </div>

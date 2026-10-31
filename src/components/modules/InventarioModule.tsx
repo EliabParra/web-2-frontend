@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { IntegerInput } from "@/components/ui/integer-input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -266,7 +267,7 @@ const InventarioModule = () => {
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="item_cod">Código</Label>
-                      <Input id="item_cod" type="number" min={1} value={form.item_cod} onChange={(e) => setField("item_cod", e.target.value)} />
+                      <IntegerInput id="item_cod" min={1} value={form.item_cod} onChange={(e) => setField("item_cod", e.target.value)} />
                     </div>
                     <div className="space-y-2 col-span-2">
                       <Label htmlFor="item_na">Nombre</Label>
@@ -300,7 +301,7 @@ const InventarioModule = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="inventory_qt">Cantidad</Label>
-                  <Input id="inventory_qt" type="number" min={0} value={form.inventory_qt} onChange={(e) => setField("inventory_qt", e.target.value)} />
+                  <IntegerInput id="inventory_qt" min={0} value={form.inventory_qt} onChange={(e) => setField("inventory_qt", e.target.value)} />
                 </div>
               </div>
             </div>
@@ -320,7 +321,7 @@ const InventarioModule = () => {
           {dialog?.mode === "stock" && (
             <div className="space-y-2">
               <Label htmlFor="quantity">Cantidad (actual: {dialog.row.inventory_qt})</Label>
-              <Input id="quantity" type="number" min={1} value={dialog.quantity} onChange={(e) => setDialog({ ...dialog, quantity: e.target.value })} />
+              <IntegerInput id="quantity" min={1} value={dialog.quantity} onChange={(e) => setDialog({ ...dialog, quantity: e.target.value })} />
             </div>
           )}
           <DialogFooter>
