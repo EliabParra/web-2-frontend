@@ -1,7 +1,7 @@
 /**
  * Transaction numbers for POST /toProccess.
- * They come from the backend's deterministic BO registration (BO dirs sorted, txStart 1000),
- * so they only change if the backend adds, removes or reorders BO methods.
+ * They must match the backend's pinned map in scripts/db/tx-map.json; a new BO method gets
+ * the next free number in both files, and existing numbers never change.
  */
 export const TX = {
   auth: { register: 1000, verifyEmail: 1001, requestEmailVerification: 1002, requestPasswordReset: 1003, verifyPasswordReset: 1004, resetPassword: 1005, requestUsername: 1006, getNavigation: 1007, switchActiveProfile: 1008 },

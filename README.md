@@ -34,7 +34,7 @@ Inicia sesión con un usuario del backend (en desarrollo, `admin` / `admin123` s
 ## Mapa del código
 
 - `src/api/client.ts`: cliente HTTP con el token CSRF, `post()` y `tx()`. Un 401 cierra la sesión; un 403 solo indica falta de permisos.
-- `src/api/tx.ts`: números de transacción. Coinciden con el registro de BOs del backend (orden alfabético, desde la 1000).
+- `src/api/tx.ts`: números de transacción. Deben coincidir con `scripts/db/tx-map.json` del backend; un método nuevo se agrega en los dos archivos con el mismo número.
 - `src/hooks/useTx.ts`: `useTx()` para lecturas y `runTx()` para escrituras con notificaciones.
 - `src/contexts/AuthContext.tsx`: login y logout; el usuario se guarda en `localStorage` y se borra cuando el backend rechaza la sesión.
 - `src/components/modules/`: una pantalla por módulo (`negocio/` y `seguridad/` para administración).
