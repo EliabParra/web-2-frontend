@@ -11,17 +11,21 @@ const Login = () => {
   const [user, setUser] = useState("");
   const [clave, setClave] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
     try {
-      login(user, clave);
+      await login(user, clave);
       navigate("/dashboard");
-    } catch {
-      setError("Credenciales inválidas. Intente de nuevo.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Credenciales inválidas. Intente de nuevo.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -76,8 +80,8 @@ const Login = () => {
               <p className="text-destructive text-sm text-center">{error}</p>
             )}
 
-            <Button type="submit" className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold">
-              Entrar
+            <Button type="submit" disabled={loading} className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold">
+              {loading ? "Entrando..." : "Entrar"}
             </Button>
           </form>
 

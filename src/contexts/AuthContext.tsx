@@ -1,64 +1,50 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from "react";
+import * as authApi from "@/api/auth";
+import { UNAUTHORIZED_EVENT } from "@/api/client";
 
-export type UserRole = "usuario" | "supervisor" | "admin";
-
-export interface User {
-  id: string;
-  nombre: string;
-  apellido: string;
-  cedula: string;
-  role: UserRole;
-}
+export type User = authApi.SessionUser;
 
 interface AuthContextType {
   user: User | null;
-  login: (cedula: string, clave: string) => void;
-  logout: () => void;
-  register: (data: Omit<User, "id"> & { clave: string }) => void;
-  resetPassword: (cedula: string, nuevaClave: string) => void;
+  login: (identifier: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
 }
+
+const STORAGE_KEY = "toproc.user";
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// Mock users for demo
-const mockUsers: (User & { clave: string })[] = [
-  { id: "1", nombre: "Carlos", apellido: "García", cedula: "12345678", role: "usuario", clave: "1234" },
-  { id: "2", nombre: "María", apellido: "López", cedula: "87654321", role: "supervisor", clave: "1234" },
-  { id: "3", nombre: "Admin", apellido: "Sistema", cedula: "admin", role: "admin", clave: "admin" },
-];
+function readStoredUser(): User | null {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+  } catch {
+    return null;
+  }
+}
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(readStoredUser);
 
-  const login = (cedula: string, clave: string) => {
-    const found = mockUsers.find((u) => u.cedula === cedula && u.clave === clave);
-    if (found) {
-      const { clave: _, ...userData } = found;
-      setUser(userData);
-    } else {
-      throw new Error("Credenciales inválidas");
-    }
+  const clearUser = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    setUser(null);
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener(UNAUTHORIZED_EVENT, clearUser);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, clearUser);
+  }, [clearUser]);
+
+  const login = async (identifier: string, password: string) => {
+    const loggedIn = await authApi.login(identifier, password);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(loggedIn));
+    setUser(loggedIn);
   };
 
-  const logout = () => setUser(null);
+  // The local session ends even if the backend session had already expired.
+  const logout = () => authApi.logout().catch(() => undefined).finally(clearUser);
 
-  const register = (data: Omit<User, "id"> & { clave: string }) => {
-    const newUser: User = { ...data, id: Date.now().toString() };
-    setUser(newUser);
-  };
-
-  const resetPassword = (cedula: string, nuevaClave: string) => {
-    const found = mockUsers.find((u) => u.cedula === cedula);
-    if (found) {
-      found.clave = nuevaClave;
-    }
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, login, logout, register, resetPassword }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

@@ -11,13 +11,15 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const PerfilModule = ({ onBack }: { onBack: () => void }) => {
   const { user } = useAuth();
-  const roleLabel = user?.role === "admin" ? "Administrador" : user?.role === "supervisor" ? "Supervisor" : "Usuario";
-  const roleColor = user?.role === "admin" ? "bg-amber-500 hover:bg-amber-600" : user?.role === "supervisor" ? "bg-blue-500 hover:bg-blue-600" : "bg-green-500 hover:bg-green-600";
+  // Profile 3 is super_admin in the backend seed.
+  const isAdmin = user?.profile_ids.includes(3);
+  const roleLabel = isAdmin ? "Administrador" : "Usuario";
+  const roleColor = isAdmin ? "bg-amber-500 hover:bg-amber-600" : "bg-green-500 hover:bg-green-600";
 
   const [form, setForm] = useState({
-    nombre: user?.nombre || "",
-    apellido: user?.apellido || "",
-    email: `${(user?.nombre || "").toLowerCase()}.${(user?.apellido || "").toLowerCase()}@uru.edu`,
+    nombre: user?.user_na || "",
+    apellido: "",
+    email: user?.user_em || "",
     telefono: "0414-0000000",
     departamento: "Sistemas",
     cargo: roleLabel + " del Sistema",

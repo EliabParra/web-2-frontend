@@ -1,5 +1,5 @@
 import { ReactNode, useState } from "react";
-import { useAuth, UserRole } from "@/contexts/AuthContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import URULogo from "./URULogo";
 import NotificationsPanel from "./NotificationsPanel";
@@ -48,26 +48,20 @@ interface MenuItem {
   key: string;
 }
 
-const menusByRole: Record<UserRole, MenuItem[]> = {
-  usuario: [
-    { label: "Solicitudes", icon: <FileText className="w-5 h-5" />, key: "solicitudes" },
-    { label: "Préstamos", icon: <HandCoins className="w-5 h-5" />, key: "prestamos" },
-    { label: "Solvencia", icon: <ShieldCheck className="w-5 h-5" />, key: "solvencia" },
-  ],
-  supervisor: [
-    { label: "Préstamos", icon: <HandCoins className="w-5 h-5" />, key: "prestamos" },
-    { label: "Devoluciones", icon: <PackageSearch className="w-5 h-5" />, key: "devoluciones" },
-    { label: "Inventario", icon: <Blocks className="w-5 h-5" />, key: "inventario" },
-    { label: "Ubicación", icon: <MapPin className="w-5 h-5" />, key: "ubicacion" },
-    { label: "Reportes", icon: <BarChart3 className="w-5 h-5" />, key: "reportes" },
-    { label: "Notificar", icon: <Send className="w-5 h-5" />, key: "notificar" },
-  ],
-  admin: [
-    { label: "Seguridad", icon: <Lock className="w-5 h-5" />, key: "seguridad" },
-    { label: "Negocio", icon: <Building2 className="w-5 h-5" />, key: "negocio" },
-    { label: "Asignar Permisos", icon: <Key className="w-5 h-5" />, key: "permisos" },
-  ],
-};
+// Every module is listed for every user; the backend decides what each profile may execute.
+const menuItems: MenuItem[] = [
+  { label: "Solicitudes", icon: <FileText className="w-5 h-5" />, key: "solicitudes" },
+  { label: "Préstamos", icon: <HandCoins className="w-5 h-5" />, key: "prestamos" },
+  { label: "Solvencia", icon: <ShieldCheck className="w-5 h-5" />, key: "solvencia" },
+  { label: "Devoluciones", icon: <PackageSearch className="w-5 h-5" />, key: "devoluciones" },
+  { label: "Inventario", icon: <Blocks className="w-5 h-5" />, key: "inventario" },
+  { label: "Ubicación", icon: <MapPin className="w-5 h-5" />, key: "ubicacion" },
+  { label: "Reportes", icon: <BarChart3 className="w-5 h-5" />, key: "reportes" },
+  { label: "Notificar", icon: <Send className="w-5 h-5" />, key: "notificar" },
+  { label: "Seguridad", icon: <Lock className="w-5 h-5" />, key: "seguridad" },
+  { label: "Negocio", icon: <Building2 className="w-5 h-5" />, key: "negocio" },
+  { label: "Asignar Permisos", icon: <Key className="w-5 h-5" />, key: "permisos" },
+];
 
 const seguridadModules = [
   { label: "Usuarios", icon: <Users className="w-8 h-8" />, key: "seg_usuarios" },
@@ -97,13 +91,7 @@ const DashboardLayout = ({ children }: { children?: ReactNode }) => {
   const [activeItem, setActiveItem] = useState<string>("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  if (!user) {
-    navigate("/login");
-    return null;
-  }
-
-  const menuItems = menusByRole[user.role];
-  const roleLabel = user.role === "usuario" ? "Usuario" : user.role === "supervisor" ? "Supervisor" : "Administrador";
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-transparent flex flex-col">
@@ -123,13 +111,13 @@ const DashboardLayout = ({ children }: { children?: ReactNode }) => {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-card border-border">
               <div className="px-3 py-2">
-                <p className="font-semibold text-sm text-foreground">{user.nombre} {user.apellido}</p>
-                <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                <p className="font-semibold text-sm text-foreground">{user.user_na}</p>
+                <p className="text-xs text-muted-foreground">{user.user_em}</p>
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-foreground" onClick={() => setActiveItem("seg_perfil")}>Ver Perfil</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => { logout(); navigate("/login"); }} className="text-destructive">
+              <DropdownMenuItem onClick={() => logout().then(() => navigate("/login"))} className="text-destructive">
                 <LogOut className="w-4 h-4 mr-2" />Cerrar Sesión
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -157,56 +145,53 @@ const DashboardLayout = ({ children }: { children?: ReactNode }) => {
         </aside>
 
         <main className="flex-1 overflow-auto p-6">
-          {children || <DefaultContent role={user.role} activeItem={activeItem} onNavigate={setActiveItem} />}
+          {children || <DefaultContent activeItem={activeItem} onNavigate={setActiveItem} />}
         </main>
       </div>
     </div>
   );
 };
 
-const DefaultContent = ({ role, activeItem, onNavigate }: { role: UserRole; activeItem: string; onNavigate?: (key: string) => void }) => {
+const DefaultContent = ({ activeItem, onNavigate }: { activeItem: string; onNavigate?: (key: string) => void }) => {
   const goHome = () => onNavigate?.("");
   const goSeguridad = () => onNavigate?.("seguridad");
   const goNegocio = () => onNavigate?.("negocio");
 
-  // === Usuario modules ===
-  if (activeItem === "solicitudes" && role === "usuario") return <><BackButton onClick={goHome} /><SolicitudesModule /></>;
-  if (activeItem === "prestamos" && role === "usuario") return <><BackButton onClick={goHome} /><PrestamosModule /></>;
-  if (activeItem === "solvencia" && role === "usuario") return <><BackButton onClick={goHome} /><SolvenciaModule /></>;
-
-  // === Supervisor modules ===
-  if (activeItem === "prestamos" && role === "supervisor") return <><BackButton onClick={goHome} /><PrestamosModule /></>;
-  if (activeItem === "devoluciones" && role === "supervisor") return <><BackButton onClick={goHome} /><DevolucionesModule /></>;
-  if (activeItem === "inventario" && role === "supervisor") return <><BackButton onClick={goHome} /><InventarioModule /></>;
-  if (activeItem === "ubicacion" && role === "supervisor") return <><BackButton onClick={goHome} /><UbicacionModule /></>;
-  if (activeItem === "reportes" && role === "supervisor") return <><BackButton onClick={goHome} /><ReportesModule /></>;
-  if (activeItem === "notificar" && role === "supervisor") return <><BackButton onClick={goHome} /><NotificarModule /></>;
+  // === Main modules ===
+  if (activeItem === "solicitudes") return <><BackButton onClick={goHome} /><SolicitudesModule /></>;
+  if (activeItem === "prestamos") return <><BackButton onClick={goHome} /><PrestamosModule /></>;
+  if (activeItem === "solvencia") return <><BackButton onClick={goHome} /><SolvenciaModule /></>;
+  if (activeItem === "devoluciones") return <><BackButton onClick={goHome} /><DevolucionesModule /></>;
+  if (activeItem === "inventario") return <><BackButton onClick={goHome} /><InventarioModule /></>;
+  if (activeItem === "ubicacion") return <><BackButton onClick={goHome} /><UbicacionModule /></>;
+  if (activeItem === "reportes") return <><BackButton onClick={goHome} /><ReportesModule /></>;
+  if (activeItem === "notificar") return <><BackButton onClick={goHome} /><NotificarModule /></>;
 
   // === Admin: Asignar Permisos ===
-  if (role === "admin" && activeItem === "permisos") return <><BackButton onClick={goHome} /><PermisosModule /></>;
+  if (activeItem === "permisos") return <><BackButton onClick={goHome} /><PermisosModule /></>;
 
   // === Admin: Seguridad sub-modules ===
-  if (role === "admin" && activeItem === "seg_usuarios") return <UsuariosModule onBack={goSeguridad} />;
-  if (role === "admin" && activeItem === "seg_personas") return <PersonasModule onBack={goSeguridad} />;
-  if (role === "admin" && activeItem === "seg_grupos") return <GruposModule onBack={goSeguridad} />;
+  if (activeItem === "seg_usuarios") return <UsuariosModule onBack={goSeguridad} />;
+  if (activeItem === "seg_personas") return <PersonasModule onBack={goSeguridad} />;
+  if (activeItem === "seg_grupos") return <GruposModule onBack={goSeguridad} />;
   if (activeItem === "seg_perfil") return <PerfilModule onBack={goHome} />;
-  if (role === "admin" && activeItem === "seg_subsistema") return <SubsistemaModule onBack={goSeguridad} />;
-  if (role === "admin" && activeItem === "seg_objetos") return <ObjetosModule onBack={goSeguridad} />;
-  if (role === "admin" && activeItem === "seg_metodos") return <MetodosModule onBack={goSeguridad} />;
-  if (role === "admin" && activeItem === "seg_permisos") return <PermisosModModule onBack={goSeguridad} />;
-  if (role === "admin" && activeItem === "seg_notificacion") return <NotificacionModule onBack={goSeguridad} />;
-  if (role === "admin" && activeItem === "seg_calendario") return <CalendarioModule onBack={goSeguridad} />;
+  if (activeItem === "seg_subsistema") return <SubsistemaModule onBack={goSeguridad} />;
+  if (activeItem === "seg_objetos") return <ObjetosModule onBack={goSeguridad} />;
+  if (activeItem === "seg_metodos") return <MetodosModule onBack={goSeguridad} />;
+  if (activeItem === "seg_permisos") return <PermisosModModule onBack={goSeguridad} />;
+  if (activeItem === "seg_notificacion") return <NotificacionModule onBack={goSeguridad} />;
+  if (activeItem === "seg_calendario") return <CalendarioModule onBack={goSeguridad} />;
 
   // === Admin: Negocio sub-modules ===
-  if (role === "admin" && activeItem === "mantenimiento") return <><BackButton onClick={goNegocio} /><MantenimientoModule /></>;
-  if (role === "admin" && activeItem === "prestamos_admin") return <PrestamosAdminModule onBack={goNegocio} />;
-  if (role === "admin" && activeItem === "devoluciones_admin") return <DevolucionesAdminModule onBack={goNegocio} />;
-  if (role === "admin" && activeItem === "notificaciones_admin") return <NotificacionesAdminModule onBack={goNegocio} />;
-  if (role === "admin" && activeItem === "reportes_admin") return <ReportesAdminModule onBack={goNegocio} />;
-  if (role === "admin" && activeItem === "auditoria") return <><BackButton onClick={goNegocio} /><AuditoriaModule /></>;
+  if (activeItem === "mantenimiento") return <><BackButton onClick={goNegocio} /><MantenimientoModule /></>;
+  if (activeItem === "prestamos_admin") return <PrestamosAdminModule onBack={goNegocio} />;
+  if (activeItem === "devoluciones_admin") return <DevolucionesAdminModule onBack={goNegocio} />;
+  if (activeItem === "notificaciones_admin") return <NotificacionesAdminModule onBack={goNegocio} />;
+  if (activeItem === "reportes_admin") return <ReportesAdminModule onBack={goNegocio} />;
+  if (activeItem === "auditoria") return <><BackButton onClick={goNegocio} /><AuditoriaModule /></>;
 
   // === Admin: Seguridad grid ===
-  if (role === "admin" && activeItem === "seguridad") {
+  if (activeItem === "seguridad") {
     return (
       <div>
         <BackButton onClick={goHome} />
@@ -224,7 +209,7 @@ const DefaultContent = ({ role, activeItem, onNavigate }: { role: UserRole; acti
   }
 
   // === Admin: Negocio grid ===
-  if (role === "admin" && activeItem === "negocio") {
+  if (activeItem === "negocio") {
     return (
       <div>
         <BackButton onClick={goHome} />
@@ -242,7 +227,6 @@ const DefaultContent = ({ role, activeItem, onNavigate }: { role: UserRole; acti
   }
 
   // === Home: module grid ===
-  const menuItems = menusByRole[role];
   return (
     <div>
       <h2 className="text-xl font-bold text-foreground mb-2">Bienvenido al Sistema</h2>
