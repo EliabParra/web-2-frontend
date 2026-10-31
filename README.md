@@ -1,40 +1,40 @@
 # Toproc Frontend
 
-React + Vite + shadcn/ui frontend for the Toproc backend (`web-2-backend`). It talks to the backend through same-origin requests only: `GET /csrf`, `POST /login`, `POST /logout` and `POST /toProccess` (`{ tx, params }`).
+Interfaz web (React + Vite + shadcn/ui) del sistema de inventario de componentes. Funciona con el backend **[web-2-backend](https://github.com/EliabParra/web-2-backend)** y solo hace peticiones al mismo origen: `GET /csrf`, `POST /login`, `POST /logout` y `POST /toProccess` (`{ tx, params }`).
 
-## Development
+## Instalar
 
-Requirements: Node.js 20+ and npm.
+Este repositorio no se instala por separado: el instalador del backend descarga los dos repositorios, compila el frontend y lo sirve en el mismo puerto que la API. Instrucciones en el [README del backend](https://github.com/EliabParra/web-2-backend#instalar).
 
-1. Start the backend on `http://localhost:3000` (see the backend's `docs/DEV.md`).
-2. Run the frontend:
+## Desarrollar
+
+Requisitos: Node.js 20+ y npm.
+
+1. Levanta el backend en `http://localhost:3000` (ver `docs/DEV.md` del backend).
+2. Levanta el frontend:
 
    ```sh
    npm ci
    npm run dev
    ```
 
-3. Open `http://localhost:8080`. The Vite dev server proxies `/toProccess`, `/login`, `/logout` and `/csrf` to `http://localhost:3000`, so the browser sees a single origin and the session cookie works.
+3. Abre `http://localhost:5173`. Vite redirige `/toProccess`, `/login`, `/logout` y `/csrf` a `http://localhost:3000`, así que el navegador ve un solo origen y la cookie de sesión funciona.
 
-Log in with a backend user (the seeded admin uses the username and password from the backend `.env`).
+Inicia sesión con un usuario del backend (en desarrollo, `admin` / `admin123` si seguiste `docs/DEV.md`).
 
-| Command | What it does |
-|---------|--------------|
-| `npm run dev` | Dev server with the backend proxy |
-| `npm run build` | Production build into `dist/` |
-| `npm test` | Unit tests (Vitest) |
+| Comando | Qué hace |
+|---------|----------|
+| `npm run dev` | Servidor de desarrollo con el proxy al backend |
+| `npm run build` | Build de producción en `dist/` |
+| `npm test` | Tests unitarios (Vitest) |
 | `npm run lint` | ESLint |
 
-`VITE_API_URL` is optional (default: empty, same origin). Only set it when the API lives on another origin.
+`VITE_API_URL` es opcional (por defecto vacío, mismo origen). Solo se define si la API vive en otro origen.
 
-## Production
+## Mapa del código
 
-The frontend is not deployed on its own: the backend image builds it (`npm ci && npm run build`) and serves `dist/` as an SPA on the same port as the API. See the backend's `docs/DEPLOY.md` for the install and update steps.
-
-## Code map
-
-- `src/api/client.ts` – fetch client: CSRF token, `post()`, `tx()`.
-- `src/api/tx.ts` – transaction numbers (from the backend's deterministic BO registration).
-- `src/hooks/useTx.ts` – `useTx()` for reads, `runTx()` for writes with toasts.
-- `src/contexts/AuthContext.tsx` – login/logout; the user is kept in `localStorage` and cleared when the backend rejects the session.
-- `src/components/modules/` – one screen per module.
+- `src/api/client.ts`: cliente HTTP con el token CSRF, `post()` y `tx()`. Un 401 cierra la sesión; un 403 solo indica falta de permisos.
+- `src/api/tx.ts`: números de transacción. Coinciden con el registro de BOs del backend (orden alfabético, desde la 1000).
+- `src/hooks/useTx.ts`: `useTx()` para lecturas y `runTx()` para escrituras con notificaciones.
+- `src/contexts/AuthContext.tsx`: login y logout; el usuario se guarda en `localStorage` y se borra cuando el backend rechaza la sesión.
+- `src/components/modules/`: una pantalla por módulo (`negocio/` y `seguridad/` para administración).
