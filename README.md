@@ -1,4 +1,4 @@
-# Toproc Frontend
+# Control de Laboratorio: frontend
 
 Interfaz web (React + Vite + shadcn/ui) del sistema de inventario de componentes. Funciona con el backend **[web-2-backend](https://github.com/EliabParra/web-2-backend)** y solo hace peticiones al mismo origen: `GET /csrf`, `POST /login`, `POST /logout` y `POST /toProccess` (`{ tx, params }`).
 
