@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,62 +15,72 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Plus, Clock, CheckCircle, XCircle } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { TX } from "@/api/tx";
+import { runTx, useTx } from "@/hooks/useTx";
+import { useAuth } from "@/contexts/AuthContext";
 
-interface Solicitud {
-  id: string;
-  componente: string;
-  cantidad: number;
-  fecha: string;
-  motivo: string;
-  estado: "pendiente" | "aprobada" | "rechazada";
+/** Loan request as returned by Loan.getAllRequests (dates arrive already formatted "dd/mm/yyyy, hh:mm:ss"). */
+export interface Solicitud {
+  movement_id: number;
+  user_id: number;
+  movement_ob: string | null;
+  movement_booking_dt: string | null;
+  movement_estimated_return_dt: string | null;
+  movement_type_id: number;
+  total_items: number;
 }
 
-const mockSolicitudes: Solicitud[] = [
-  { id: "SOL-001", componente: "Arduino UNO R3", cantidad: 2, fecha: "2026-02-28", motivo: "Práctica de microcontroladores", estado: "aprobada" },
-  { id: "SOL-002", componente: "Protoboard 830 puntos", cantidad: 1, fecha: "2026-03-01", motivo: "Proyecto de circuitos", estado: "pendiente" },
-  { id: "SOL-003", componente: "Multímetro Digital", cantidad: 1, fecha: "2026-02-25", motivo: "Laboratorio de mediciones", estado: "rechazada" },
-];
+interface InventarioRow {
+  inventory_id: number;
+  inventory_qt: number;
+  item_na: string;
+  location_de: string;
+}
 
-const componentesDisponibles = [
-  "Resistencia 1kΩ", "Capacitor 100µF", "LED Rojo 5mm", "Transistor 2N2222",
-  "Protoboard 830 puntos", "Multímetro Digital", "Arduino UNO R3",
-  "Cable Jumper M-M", "Fuente de Poder 12V", "Osciloscopio Rigol",
-];
+type Estado = "pendiente" | "aprobada" | "rechazada";
 
-const estadoConfig: Record<Solicitud["estado"], { icon: React.ReactNode; class: string }> = {
+// Movement types 1-3 of the backend seed: Solicitado, Aceptado, Rechazado.
+export const estadoSolicitud: Record<number, Estado> = { 1: "pendiente", 2: "aprobada", 3: "rechazada" };
+
+export const fechaCorta = (v: string | null) => v?.split(",")[0] || "—";
+
+const estadoConfig: Record<Estado, { icon: React.ReactNode; class: string }> = {
   pendiente: { icon: <Clock className="w-3.5 h-3.5" />, class: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
   aprobada: { icon: <CheckCircle className="w-3.5 h-3.5" />, class: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
   rechazada: { icon: <XCircle className="w-3.5 h-3.5" />, class: "bg-red-500/20 text-red-400 border-red-500/30" },
 };
 
 const SolicitudesModule = () => {
-  const [solicitudes, setSolicitudes] = useState<Solicitud[]>(mockSolicitudes);
-  const [componente, setComponente] = useState("");
+  const { user } = useAuth();
+  const { data, loading, error, reload } = useTx<Solicitud[]>(TX.loan.getAllRequests);
+  const inventario = useTx<InventarioRow[]>(TX.inventory.getAll);
+  const [inventoryId, setInventoryId] = useState("");
   const [cantidad, setCantidad] = useState("1");
   const [motivo, setMotivo] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { toast } = useToast();
 
-  const handleSubmit = () => {
-    if (!componente || !motivo) {
-      toast({ title: "Error", description: "Complete todos los campos.", variant: "destructive" });
+  const disponibles = (inventario.data ?? []).filter((i) => i.inventory_qt > 0);
+
+  const handleSubmit = async () => {
+    if (!inventoryId || !motivo) {
+      toast.error("Complete todos los campos.");
       return;
     }
-    const nueva: Solicitud = {
-      id: `SOL-${String(solicitudes.length + 1).padStart(3, "0")}`,
-      componente,
-      cantidad: parseInt(cantidad) || 1,
-      fecha: new Date().toISOString().split("T")[0],
-      motivo,
-      estado: "pendiente",
-    };
-    setSolicitudes([nueva, ...solicitudes]);
-    setComponente("");
+    const ok = await runTx(
+      TX.loan.requestLoan,
+      {
+        user_id: user?.user_id,
+        movement_ob: motivo,
+        details: [{ inventory_id: inventoryId, movement_detail_am: cantidad }],
+      },
+      "Solicitud enviada",
+    );
+    if (!ok) return;
+    setInventoryId("");
     setCantidad("1");
     setMotivo("");
     setDialogOpen(false);
-    toast({ title: "Solicitud enviada", description: `Se creó la solicitud ${nueva.id} exitosamente.` });
+    reload();
   };
 
   return (
@@ -89,11 +100,13 @@ const SolicitudesModule = () => {
             <div className="space-y-4 py-2">
               <div className="space-y-2">
                 <Label>Componente</Label>
-                <Select value={componente} onValueChange={setComponente}>
+                <Select value={inventoryId} onValueChange={setInventoryId}>
                   <SelectTrigger><SelectValue placeholder="Seleccione un componente" /></SelectTrigger>
                   <SelectContent>
-                    {componentesDisponibles.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    {disponibles.map((i) => (
+                      <SelectItem key={i.inventory_id} value={String(i.inventory_id)}>
+                        {i.item_na} — {i.location_de} (disp: {i.inventory_qt})
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -122,37 +135,41 @@ const SolicitudesModule = () => {
         </Dialog>
       </div>
 
+      {error && <p className="text-destructive text-sm">{error}</p>}
+
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent border-border">
               <TableHead>ID</TableHead>
-              <TableHead>Componente</TableHead>
-              <TableHead className="text-center">Cant.</TableHead>
+              <TableHead className="text-center">Ítems</TableHead>
               <TableHead>Fecha</TableHead>
               <TableHead>Motivo</TableHead>
               <TableHead className="text-center">Estado</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {solicitudes.map((sol) => {
-              const cfg = estadoConfig[sol.estado];
+            {(data ?? []).map((sol) => {
+              const estado = estadoSolicitud[sol.movement_type_id] ?? "pendiente";
+              const cfg = estadoConfig[estado];
               return (
-                <TableRow key={sol.id} className="border-border">
-                  <TableCell className="font-mono text-accent">{sol.id}</TableCell>
-                  <TableCell className="font-medium">{sol.componente}</TableCell>
-                  <TableCell className="text-center">{sol.cantidad}</TableCell>
-                  <TableCell className="text-muted-foreground">{sol.fecha}</TableCell>
-                  <TableCell className="text-muted-foreground max-w-[200px] truncate">{sol.motivo}</TableCell>
+                <TableRow key={sol.movement_id} className="border-border">
+                  <TableCell className="font-mono text-accent">{sol.movement_id}</TableCell>
+                  <TableCell className="text-center">{sol.total_items}</TableCell>
+                  <TableCell className="text-muted-foreground">{fechaCorta(sol.movement_booking_dt)}</TableCell>
+                  <TableCell className="text-muted-foreground max-w-[200px] truncate">{sol.movement_ob}</TableCell>
                   <TableCell className="text-center">
                     <Badge variant="outline" className={`gap-1 ${cfg.class}`}>
                       {cfg.icon}
-                      {sol.estado.charAt(0).toUpperCase() + sol.estado.slice(1)}
+                      {estado.charAt(0).toUpperCase() + estado.slice(1)}
                     </Badge>
                   </TableCell>
                 </TableRow>
               );
             })}
+            {!loading && (data ?? []).length === 0 && (
+              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-8">No tienes solicitudes</TableCell></TableRow>
+            )}
           </TableBody>
         </Table>
       </div>

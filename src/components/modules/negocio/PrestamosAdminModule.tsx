@@ -1,41 +1,42 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { HandCoins, Search, Clock, AlertTriangle, CheckCircle, Plus, Edit, Trash2, Users } from "lucide-react";
-import { toast } from "@/hooks/use-toast";
+import { HandCoins, Search, Clock, AlertTriangle, CheckCircle, XCircle, PackageCheck } from "lucide-react";
 import BackButton from "@/components/BackButton";
+import { TX } from "@/api/tx";
+import { runTx, useTx } from "@/hooks/useTx";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  estadoPrestamo, fecha, usuarioDe, type PrestamoResumen, type Usuario,
+} from "@/components/modules/DevolucionesModule";
+import { estadoSolicitud, fechaCorta, type Solicitud } from "@/components/modules/SolicitudesModule";
 
-interface PrestamoAdmin {
-  id: string;
-  usuario: string;
-  cedula: string;
-  componente: string;
-  cantidad: number;
-  fechaPrestamo: string;
-  fechaLimite: string;
-  estado: "activo" | "vencido" | "devuelto" | "cancelado";
-  aprobadoPor: string;
+type Estado = "pendiente" | "aprobada" | "rechazada" | "activo" | "vencido" | "devuelto";
+
+interface Fila {
+  movement_id: number;
+  user_id: number;
+  items: number;
+  fecha: string;
+  limite: string;
+  estado: Estado;
 }
 
-const initialPrestamos: PrestamoAdmin[] = [
-  { id: "P001", usuario: "Carlos García", cedula: "12345678", componente: "Resistencia 1kΩ", cantidad: 10, fechaPrestamo: "2025-03-01", fechaLimite: "2025-03-15", estado: "activo", aprobadoPor: "Supervisor Pérez" },
-  { id: "P002", usuario: "Ana Martínez", cedula: "11223344", componente: "Capacitor 100µF", cantidad: 5, fechaPrestamo: "2025-02-20", fechaLimite: "2025-03-05", estado: "vencido", aprobadoPor: "Supervisor López" },
-  { id: "P003", usuario: "Luis Pérez", cedula: "55667788", componente: "LED Rojo 5mm", cantidad: 20, fechaPrestamo: "2025-02-10", fechaLimite: "2025-02-25", estado: "devuelto", aprobadoPor: "Supervisor Pérez" },
-  { id: "P004", usuario: "María López", cedula: "99887766", componente: "Arduino UNO R3", cantidad: 1, fechaPrestamo: "2025-03-05", fechaLimite: "2025-03-20", estado: "activo", aprobadoPor: "Supervisor López" },
-  { id: "P005", usuario: "Pedro Rojas", cedula: "44556677", componente: "Protoboard", cantidad: 2, fechaPrestamo: "2025-01-15", fechaLimite: "2025-02-01", estado: "cancelado", aprobadoPor: "Admin" },
-];
+type Accion = { tipo: "aprobar" | "rechazar"; fila: Fila; fechaLimite: string; observacion: string };
 
-const estadoBadge: Record<string, { variant: "default" | "destructive" | "secondary" | "outline"; label: string }> = {
+const estadoBadge: Record<Estado, { variant: "default" | "destructive" | "secondary" | "outline"; label: string }> = {
+  pendiente: { variant: "outline", label: "Pendiente" },
+  aprobada: { variant: "secondary", label: "Aprobada" },
+  rechazada: { variant: "outline", label: "Rechazada" },
   activo: { variant: "default", label: "Activo" },
   vencido: { variant: "destructive", label: "Vencido" },
   devuelto: { variant: "secondary", label: "Devuelto" },
-  cancelado: { variant: "outline", label: "Cancelado" },
 };
 
 interface Props {
@@ -43,84 +44,99 @@ interface Props {
 }
 
 const PrestamosAdminModule = ({ onBack }: Props) => {
-  const [prestamos, setPrestamos] = useState(initialPrestamos);
+  const { user } = useAuth();
+  const solicitudes = useTx<Solicitud[]>(TX.loan.getAllRequests);
+  const prestamos = useTx<PrestamoResumen[]>(TX.devolution.getAllDevolutions);
+  const usuarios = useTx<Usuario[]>(TX.user.getAll);
   const [search, setSearch] = useState("");
   const [filtro, setFiltro] = useState("todos");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editando, setEditando] = useState<PrestamoAdmin | null>(null);
-  const [deleteDialog, setDeleteDialog] = useState<PrestamoAdmin | null>(null);
+  const [accion, setAccion] = useState<Accion | null>(null);
 
-  const [form, setForm] = useState({ usuario: "", cedula: "", componente: "", cantidad: "1", fechaPrestamo: "", fechaLimite: "", estado: "activo" as PrestamoAdmin["estado"] });
+  const filas: Fila[] = [
+    ...(solicitudes.data ?? []).map((s) => ({
+      movement_id: s.movement_id,
+      user_id: s.user_id,
+      items: s.total_items,
+      fecha: fechaCorta(s.movement_booking_dt),
+      limite: fechaCorta(s.movement_estimated_return_dt),
+      estado: estadoSolicitud[s.movement_type_id] ?? "pendiente",
+    })),
+    ...(prestamos.data ?? []).map((p) => ({
+      movement_id: p.movement_id,
+      user_id: p.user_id,
+      items: p.total_items,
+      fecha: fecha(p.movement_booking_dt),
+      limite: fecha(p.movement_estimated_return_dt),
+      estado: estadoPrestamo(p),
+    })),
+  ].sort((a, b) => b.movement_id - a.movement_id);
 
-  const filtered = prestamos.filter((p) => {
-    const matchSearch = p.usuario.toLowerCase().includes(search.toLowerCase()) || p.componente.toLowerCase().includes(search.toLowerCase()) || p.cedula.includes(search);
-    const matchFiltro = filtro === "todos" || p.estado === filtro;
+  const filtered = filas.filter((f) => {
+    const u = usuarioDe(usuarios.data, f.user_id);
+    const matchSearch = `${f.movement_id} ${u.nombre} ${u.cedula}`.toLowerCase().includes(search.toLowerCase());
+    const matchFiltro = filtro === "todos" || f.estado === filtro;
     return matchSearch && matchFiltro;
   });
 
-  const activos = prestamos.filter(p => p.estado === "activo").length;
-  const vencidos = prestamos.filter(p => p.estado === "vencido").length;
-  const totalUsuarios = new Set(prestamos.map(p => p.cedula)).size;
+  const contar = (estado: Estado) => filas.filter((f) => f.estado === estado).length;
+  const loading = solicitudes.loading || prestamos.loading;
+  const error = solicitudes.error || prestamos.error;
 
-  const openNew = () => {
-    setEditando(null);
-    setForm({ usuario: "", cedula: "", componente: "", cantidad: "1", fechaPrestamo: "", fechaLimite: "", estado: "activo" });
-    setDialogOpen(true);
+  const reloadAll = () => {
+    solicitudes.reload();
+    prestamos.reload();
   };
 
-  const openEdit = (p: PrestamoAdmin) => {
-    setEditando(p);
-    setForm({ usuario: p.usuario, cedula: p.cedula, componente: p.componente, cantidad: String(p.cantidad), fechaPrestamo: p.fechaPrestamo, fechaLimite: p.fechaLimite, estado: p.estado });
-    setDialogOpen(true);
+  const confirmarAccion = async () => {
+    if (!accion) return;
+    const { tipo, fila, fechaLimite, observacion } = accion;
+    if (tipo === "aprobar" && !fechaLimite) return toast.error("Indique la fecha límite de devolución.");
+    if (tipo === "rechazar" && !observacion) return toast.error("Indique el motivo del rechazo.");
+    const ok =
+      tipo === "aprobar"
+        ? await runTx(
+            TX.loan.acceptRequestLoan,
+            { movement_id: fila.movement_id, movement_estimated_return_dt: fechaLimite, movement_ob: observacion || undefined, actor_user_id: user?.user_id },
+            "Solicitud aprobada",
+          )
+        : await runTx(
+            TX.loan.rejectRequestLoan,
+            { movement_id: fila.movement_id, movement_ob: observacion, actor_user_id: user?.user_id },
+            "Solicitud rechazada",
+          );
+    if (!ok) return;
+    setAccion(null);
+    reloadAll();
   };
 
-  const handleSave = () => {
-    if (!form.usuario || !form.cedula || !form.componente || !form.fechaPrestamo || !form.fechaLimite) {
-      toast({ title: "Error", description: "Complete todos los campos obligatorios", variant: "destructive" });
-      return;
-    }
-    if (editando) {
-      setPrestamos(prev => prev.map(p => p.id === editando.id ? { ...p, ...form, cantidad: parseInt(form.cantidad) } : p));
-      toast({ title: "Préstamo actualizado", description: `Préstamo ${editando.id} modificado exitosamente` });
-    } else {
-      const nuevo: PrestamoAdmin = { id: `P${String(prestamos.length + 1).padStart(3, "0")}`, ...form, cantidad: parseInt(form.cantidad), aprobadoPor: "Admin" };
-      setPrestamos(prev => [...prev, nuevo]);
-      toast({ title: "Préstamo registrado", description: `Nuevo préstamo creado para ${form.usuario}` });
-    }
-    setDialogOpen(false);
-  };
-
-  const handleDelete = () => {
-    if (!deleteDialog) return;
-    setPrestamos(prev => prev.filter(p => p.id !== deleteDialog.id));
-    toast({ title: "Préstamo eliminado", description: `Préstamo ${deleteDialog.id} eliminado` });
-    setDeleteDialog(null);
+  const entregar = async (fila: Fila) => {
+    if (!window.confirm(`¿Registrar la entrega del préstamo #${fila.movement_id}? Se descontará del inventario.`)) return;
+    if (await runTx(TX.loan.registerLoan, { movement_id: fila.movement_id, actor_user_id: user?.user_id }, "Préstamo registrado")) reloadAll();
   };
 
   return (
     <div className="space-y-6">
       <BackButton onClick={onBack} />
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <HandCoins className="w-7 h-7 text-primary" />
-          <h2 className="text-xl font-bold text-foreground">Gestión de Préstamos</h2>
-        </div>
-        <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" />Nuevo Préstamo</Button>
+      <div className="flex items-center gap-3">
+        <HandCoins className="w-7 h-7 text-primary" />
+        <h2 className="text-xl font-bold text-foreground">Gestión de Préstamos</h2>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card><CardContent className="p-4 flex items-center gap-3"><Clock className="w-5 h-5 text-primary" /><div><p className="text-2xl font-bold text-foreground">{activos}</p><p className="text-xs text-muted-foreground">Activos</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-destructive" /><div><p className="text-2xl font-bold text-foreground">{vencidos}</p><p className="text-xs text-muted-foreground">Vencidos</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><Users className="w-5 h-5 text-accent" /><div><p className="text-2xl font-bold text-foreground">{totalUsuarios}</p><p className="text-xs text-muted-foreground">Usuarios</p></div></CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3"><Clock className="w-5 h-5 text-accent" /><div><p className="text-2xl font-bold text-foreground">{contar("pendiente")}</p><p className="text-xs text-muted-foreground">Solicitudes Pendientes</p></div></CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3"><CheckCircle className="w-5 h-5 text-primary" /><div><p className="text-2xl font-bold text-foreground">{contar("activo")}</p><p className="text-xs text-muted-foreground">Activos</p></div></CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-destructive" /><div><p className="text-2xl font-bold text-foreground">{contar("vencido")}</p><p className="text-xs text-muted-foreground">Vencidos</p></div></CardContent></Card>
       </div>
+
+      {error && <p className="text-destructive text-sm">{error}</p>}
 
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle className="text-base">Todos los Préstamos</CardTitle>
-            <div className="flex items-center gap-3">
-              <div className="flex gap-1">
-                {["todos", "activo", "vencido", "devuelto", "cancelado"].map(f => (
+            <CardTitle className="text-base">Solicitudes y Préstamos</CardTitle>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex gap-1 flex-wrap">
+                {["todos", "pendiente", "aprobada", "activo", "vencido", "devuelto", "rechazada"].map((f) => (
                   <button key={f} onClick={() => setFiltro(f)} className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filtro === f ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/80"}`}>
                     {f.charAt(0).toUpperCase() + f.slice(1)}
                   </button>
@@ -128,7 +144,7 @@ const PrestamosAdminModule = ({ onBack }: Props) => {
               </div>
               <div className="relative w-56">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input placeholder="Buscar..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+                <Input placeholder="Buscar..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
             </div>
           </div>
@@ -140,87 +156,74 @@ const PrestamosAdminModule = ({ onBack }: Props) => {
                 <TableHead>ID</TableHead>
                 <TableHead>Usuario</TableHead>
                 <TableHead>Cédula</TableHead>
-                <TableHead>Componente</TableHead>
-                <TableHead>Cant.</TableHead>
-                <TableHead>Fecha Préstamo</TableHead>
+                <TableHead>Ítems</TableHead>
+                <TableHead>Fecha</TableHead>
                 <TableHead>Fecha Límite</TableHead>
                 <TableHead>Estado</TableHead>
-                <TableHead>Aprobado Por</TableHead>
                 <TableHead>Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(p => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-mono text-xs">{p.id}</TableCell>
-                  <TableCell className="font-medium">{p.usuario}</TableCell>
-                  <TableCell className="text-xs">{p.cedula}</TableCell>
-                  <TableCell>{p.componente}</TableCell>
-                  <TableCell>{p.cantidad}</TableCell>
-                  <TableCell>{p.fechaPrestamo}</TableCell>
-                  <TableCell>{p.fechaLimite}</TableCell>
-                  <TableCell><Badge variant={estadoBadge[p.estado].variant}>{estadoBadge[p.estado].label}</Badge></TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{p.aprobadoPor}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => openEdit(p)}><Edit className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => setDeleteDialog(p)} className="text-destructive hover:text-destructive"><Trash2 className="w-4 h-4" /></Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {filtered.length === 0 && <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">No se encontraron préstamos</TableCell></TableRow>}
+              {filtered.map((f) => {
+                const u = usuarioDe(usuarios.data, f.user_id);
+                return (
+                  <TableRow key={f.movement_id}>
+                    <TableCell className="font-mono text-xs">{f.movement_id}</TableCell>
+                    <TableCell className="font-medium">{u.nombre}</TableCell>
+                    <TableCell className="text-xs">{u.cedula}</TableCell>
+                    <TableCell>{f.items}</TableCell>
+                    <TableCell>{f.fecha}</TableCell>
+                    <TableCell>{f.limite}</TableCell>
+                    <TableCell><Badge variant={estadoBadge[f.estado].variant}>{estadoBadge[f.estado].label}</Badge></TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {f.estado === "pendiente" && (
+                          <>
+                            <Button variant="ghost" size="icon" aria-label="Aprobar" onClick={() => setAccion({ tipo: "aprobar", fila: f, fechaLimite: "", observacion: "" })}><CheckCircle className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="icon" aria-label="Rechazar" className="text-destructive hover:text-destructive" onClick={() => setAccion({ tipo: "rechazar", fila: f, fechaLimite: "", observacion: "" })}><XCircle className="w-4 h-4" /></Button>
+                          </>
+                        )}
+                        {f.estado === "aprobada" && (
+                          <Button variant="outline" size="sm" onClick={() => entregar(f)}><PackageCheck className="w-4 h-4 mr-1" />Entregar</Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!loading && filtered.length === 0 && <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">No se encontraron préstamos</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={accion !== null} onOpenChange={(open) => !open && setAccion(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editando ? "Editar Préstamo" : "Nuevo Préstamo"}</DialogTitle>
-            <DialogDescription>{editando ? "Modifique los datos del préstamo." : "Complete los datos para registrar un nuevo préstamo."}</DialogDescription>
+            <DialogTitle>{accion?.tipo === "aprobar" ? "Aprobar Solicitud" : "Rechazar Solicitud"}</DialogTitle>
+            <DialogDescription>
+              Solicitud #{accion?.fila.movement_id} de {accion ? usuarioDe(usuarios.data, accion.fila.user_id).nombre : ""}.
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2"><Label>Usuario</Label><Input value={form.usuario} onChange={e => setForm({ ...form, usuario: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Cédula</Label><Input value={form.cedula} onChange={e => setForm({ ...form, cedula: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Componente</Label><Input value={form.componente} onChange={e => setForm({ ...form, componente: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Cantidad</Label><Input type="number" min={1} value={form.cantidad} onChange={e => setForm({ ...form, cantidad: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Fecha Préstamo</Label><Input type="date" value={form.fechaPrestamo} onChange={e => setForm({ ...form, fechaPrestamo: e.target.value })} /></div>
-            <div className="space-y-2"><Label>Fecha Límite</Label><Input type="date" value={form.fechaLimite} onChange={e => setForm({ ...form, fechaLimite: e.target.value })} /></div>
-            {editando && (
-              <div className="space-y-2 col-span-2">
-                <Label>Estado</Label>
-                <Select value={form.estado} onValueChange={v => setForm({ ...form, estado: v as PrestamoAdmin["estado"] })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="activo">Activo</SelectItem>
-                    <SelectItem value="vencido">Vencido</SelectItem>
-                    <SelectItem value="devuelto">Devuelto</SelectItem>
-                    <SelectItem value="cancelado">Cancelado</SelectItem>
-                  </SelectContent>
-                </Select>
+          {accion && (
+            <div className="space-y-4">
+              {accion.tipo === "aprobar" && (
+                <div className="space-y-2">
+                  <Label>Fecha Límite de Devolución</Label>
+                  <Input type="date" value={accion.fechaLimite} onChange={(e) => setAccion({ ...accion, fechaLimite: e.target.value })} />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label>{accion.tipo === "aprobar" ? "Observación (opcional)" : "Motivo del rechazo"}</Label>
+                <Input value={accion.observacion} onChange={(e) => setAccion({ ...accion, observacion: e.target.value })} />
               </div>
-            )}
-          </div>
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave}>{editando ? "Guardar Cambios" : "Registrar"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Dialog */}
-      <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Eliminar Préstamo</DialogTitle>
-            <DialogDescription>¿Está seguro de eliminar el préstamo {deleteDialog?.id} de {deleteDialog?.usuario}? Esta acción no se puede deshacer.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialog(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete}>Eliminar</Button>
+            <Button variant="outline" onClick={() => setAccion(null)}>Cancelar</Button>
+            <Button variant={accion?.tipo === "rechazar" ? "destructive" : "default"} onClick={confirmarAccion}>
+              {accion?.tipo === "aprobar" ? "Aprobar" : "Rechazar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
