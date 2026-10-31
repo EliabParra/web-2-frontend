@@ -144,7 +144,7 @@ const InventarioModule = () => {
 
     const ok = row
       ? await runTx(TX.inventory.update, { inventory_id: row.inventory_id, inventory_qt: form.inventory_qt, location_id: form.location_id }, "Inventario actualizado")
-      : await runTx(TX.inventory.create, { item_id: itemId, location_id: form.location_id, inventory_qt: form.inventory_qt }, "Inventario registrado");
+      : await runTx(TX.inventory.create, { item_id: itemId, location_id: form.location_id, inventory_qt: form.tipo === "equipo" ? 1 : form.inventory_qt }, "Inventario registrado");
     if (!ok) return;
     close();
     reloadAll();
@@ -251,9 +251,11 @@ const InventarioModule = () => {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right whitespace-nowrap">
-                  <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Stock" onClick={() => setDialog({ mode: "stock", row: item, quantity: "1" })}>
-                    <PackagePlus className="w-4 h-4" />
-                  </Button>
+                  {TIPO_DE_CATEGORIA[item.category_type_id] !== "equipo" && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Stock" onClick={() => setDialog({ mode: "stock", row: item, quantity: "1" })}>
+                      <PackagePlus className="w-4 h-4" />
+                    </Button>
+                  )}
                   <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Editar" onClick={() => openEdit(item)}>
                     <Pencil className="w-4 h-4" />
                   </Button>
@@ -306,7 +308,7 @@ const InventarioModule = () => {
                 <>
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="item_cod">Código</Label>
+                      <Label htmlFor="item_cod">{form.tipo === "equipo" ? "Código o serial (único)" : "Código"}</Label>
                       <Input id="item_cod" maxLength={50} value={form.item_cod} onChange={(e) => setField("item_cod", e.target.value)} />
                     </div>
                     <div className="space-y-2 col-span-2">
@@ -339,10 +341,12 @@ const InventarioModule = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="inventory_qt">Cantidad</Label>
-                  <IntegerInput id="inventory_qt" min={0} value={form.inventory_qt} onChange={(e) => setField("inventory_qt", e.target.value)} />
-                </div>
+                {form.tipo !== "equipo" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="inventory_qt">Cantidad</Label>
+                    <IntegerInput id="inventory_qt" min={0} value={form.inventory_qt} onChange={(e) => setField("inventory_qt", e.target.value)} />
+                  </div>
+                )}
               </div>
             </div>
           )}

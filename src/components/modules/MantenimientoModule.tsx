@@ -207,7 +207,7 @@ const MantenimientoModule = () => {
             <div className="grid gap-4 py-2">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Código *</Label>
+                  <Label>{form.tipo === "equipo" ? "Código o serial (único) *" : "Código *"}</Label>
                   <Input maxLength={50} value={form.item_cod} onChange={(e) => setForm({ ...form, item_cod: e.target.value })} placeholder="Ej: R-100" />
                 </div>
                 <div className="space-y-2">
