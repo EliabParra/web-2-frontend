@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import URULogo from "@/components/URULogo";
 import { ArrowLeft, CheckCircle, KeyRound, Mail, User } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { tx } from "@/api/client";
+import { TX } from "@/api/tx";
 
 type RecoveryMode = "usuario" | "clave";
 type Step = "email" | "notificacion" | "codigo" | "nueva-clave" | "exito";
@@ -16,7 +17,6 @@ const ForgotPassword = () => {
   const mode: RecoveryMode = searchParams.get("mode") === "usuario" ? "usuario" : "clave";
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { resetPassword } = useAuth();
 
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
@@ -24,15 +24,32 @@ const ForgotPassword = () => {
   const [nuevaClave, setNuevaClave] = useState("");
   const [confirmarClave, setConfirmarClave] = useState("");
   const [error, setError] = useState("");
+  const [enviando, setEnviando] = useState(false);
 
-  const handleEnviarCorreo = (e: React.FormEvent) => {
+  /** Runs a backend call, showing its error inline; resolves true on success. */
+  const run = async (action: () => Promise<unknown>) => {
+    setError("");
+    setEnviando(true);
+    try {
+      await action();
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Ocurrió un error inesperado");
+      return false;
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const handleEnviarCorreo = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!email.trim() || !email.includes("@")) {
       setError("Ingrese un correo electrónico válido");
       return;
     }
-    setStep("notificacion");
+    const txId = mode === "usuario" ? TX.auth.requestUsername : TX.auth.requestPasswordReset;
+    if (await run(() => tx(txId, { email: email.trim() }))) setStep("notificacion");
   };
 
   const handleContinuarDesdeNotificacion = () => {
@@ -47,37 +64,32 @@ const ForgotPassword = () => {
     }
   };
 
-  const handleVerificarCodigo = (e: React.FormEvent) => {
+  const handleVerificarCodigo = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!codigo.trim()) {
-      setError("Ingrese el código de verificación");
+    if (codigo.trim().length !== 6) {
+      setError("Ingrese el código de 6 dígitos");
       return;
     }
-    if (codigo === "1234") {
-      setStep("nueva-clave");
-    } else {
-      setError("Código incorrecto. Use 1234 para la demo.");
-    }
+    if (await run(() => tx(TX.auth.verifyPasswordReset, { code: codigo.trim() }))) setStep("nueva-clave");
   };
 
-  const handleCambiarClave = (e: React.FormEvent) => {
+  const handleCambiarClave = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!nuevaClave.trim()) {
       setError("Ingrese la nueva clave");
       return;
     }
-    if (nuevaClave.length < 4) {
-      setError("La clave debe tener al menos 4 caracteres");
+    if (nuevaClave.length < 8) {
+      setError("La clave debe tener al menos 8 caracteres");
       return;
     }
     if (nuevaClave !== confirmarClave) {
       setError("Las claves no coinciden");
       return;
     }
-    resetPassword(email, nuevaClave);
-    setStep("exito");
+    if (await run(() => tx(TX.auth.resetPassword, { code: codigo.trim(), newPassword: nuevaClave }))) setStep("exito");
   };
 
   const titles: Record<Step, string> = {
@@ -138,7 +150,7 @@ const ForgotPassword = () => {
                 />
               </div>
               {error && <p className="text-destructive text-sm text-center">{error}</p>}
-              <Button type="submit" className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold">
+              <Button type="submit" disabled={enviando} className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold">
                 Enviar
               </Button>
             </form>
@@ -155,6 +167,10 @@ const ForgotPassword = () => {
                     : "Se ha enviado un código de verificación al correo ingresado."}
                 </p>
                 <p className="text-xs text-muted-foreground">{email}</p>
+                <p className="text-xs text-muted-foreground">
+                  Si el servidor no tiene correo configurado, el mensaje aparece en la consola del servidor:
+                  pídaselo al administrador.
+                </p>
               </div>
               <Button
                 onClick={handleContinuarDesdeNotificacion}
@@ -174,13 +190,13 @@ const ForgotPassword = () => {
                   id="codigo"
                   value={codigo}
                   onChange={(e) => setCodigo(e.target.value)}
-                  placeholder="Ingrese el código"
-                  className="bbg-secondary border-border text-foreground placeholder:text-muted-foreground"
-                  maxLength={4}
+                  placeholder="Código de 6 dígitos"
+                  className="bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                  maxLength={6}
                 />
               </div>
               {error && <p className="text-destructive text-sm text-center">{error}</p>}
-              <Button type="submit" className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold">
+              <Button type="submit" disabled={enviando} className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold">
                 Verificar Código
               </Button>
             </form>
@@ -212,7 +228,7 @@ const ForgotPassword = () => {
                 />
               </div>
               {error && <p className="text-destructive text-sm text-center">{error}</p>}
-              <Button type="submit" className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold">
+              <Button type="submit" disabled={enviando} className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold">
                 Cambiar Clave
               </Button>
             </form>

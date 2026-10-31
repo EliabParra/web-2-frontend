@@ -1,101 +1,92 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Key, Save, Shield } from "lucide-react";
-import { toast } from "@/hooks/use-toast";
+import { Key, ShieldCheck, ShieldOff } from "lucide-react";
 import BackButton from "@/components/BackButton";
+import { TX } from "@/api/tx";
+import { runTx, useTx } from "@/hooks/useTx";
 
-const roles = ["usuario", "supervisor", "admin"];
-const modulos = ["Solicitudes", "Préstamos", "Inventario", "Devoluciones", "Reportes", "Solvencia", "Ubicación", "Notificar", "Mantenimiento", "Auditoría"];
-const acciones = ["Leer", "Crear", "Editar", "Eliminar"];
+interface Perfil { profile_id: number; profile_na: string }
+interface Objeto { object_id: number; object_na: string }
+interface Metodo { method_id: number; method_na: string }
 
-type PermisoMatrix = Record<string, Record<string, boolean>>;
-
-const initialPermisos: Record<string, PermisoMatrix> = {
-  usuario: Object.fromEntries(modulos.map((m) => [m, { Leer: ["Solicitudes", "Préstamos", "Solvencia"].includes(m), Crear: m === "Solicitudes", Editar: false, Eliminar: false }])),
-  supervisor: Object.fromEntries(modulos.map((m) => [m, { Leer: !["Mantenimiento", "Auditoría"].includes(m), Crear: ["Inventario", "Devoluciones", "Notificar"].includes(m), Editar: ["Inventario", "Ubicación"].includes(m), Eliminar: false }])),
-  admin: Object.fromEntries(modulos.map((m) => [m, { Leer: true, Crear: true, Editar: true, Eliminar: true }])),
-};
-
+/**
+ * Grants or revokes one (object, method) permission for a profile.
+ * The backend has no transaction to list a profile's current permissions, so no matrix is shown.
+ */
 const PermisosModModule = ({ onBack }: { onBack: () => void }) => {
-  const [rolSeleccionado, setRolSeleccionado] = useState("usuario");
-  const [permisos, setPermisos] = useState(initialPermisos);
+  const perfiles = useTx<Perfil[]>(TX.profile.getAll);
+  const objetos = useTx<Objeto[]>(TX.object.getAll);
+  const metodos = useTx<Metodo[]>(TX.method.getAll);
+  const [profileId, setProfileId] = useState("");
+  const [objectNa, setObjectNa] = useState("");
+  const [methodNa, setMethodNa] = useState("");
 
-  const matrix = permisos[rolSeleccionado];
+  const error = perfiles.error ?? objetos.error ?? metodos.error;
+  const ready = profileId && objectNa && methodNa;
+  const params = { profile_id: Number(profileId), object_na: objectNa, method_na: methodNa };
 
-  const togglePermiso = (modulo: string, accion: string) => {
-    setPermisos((prev) => ({
-      ...prev,
-      [rolSeleccionado]: {
-        ...prev[rolSeleccionado],
-        [modulo]: {
-          ...prev[rolSeleccionado][modulo],
-          [accion]: !prev[rolSeleccionado][modulo][accion],
-        },
-      },
-    }));
-  };
-
-  const handleSave = () => {
-    toast({ title: "Permisos guardados", description: `Matriz de permisos para ${rolSeleccionado} actualizada.` });
-  };
-
-  const totalActivos = Object.values(matrix).reduce((sum, accMap) => sum + Object.values(accMap).filter(Boolean).length, 0);
+  const grant = () => runTx(TX.profile.grantPermission, params, `Permiso ${objectNa}.${methodNa} concedido`);
+  const revoke = () => runTx(TX.profile.revokePermission, params, `Permiso ${objectNa}.${methodNa} revocado`);
 
   return (
     <div className="space-y-6">
       <BackButton onClick={onBack} />
       <div className="flex items-center gap-3">
         <Key className="w-6 h-6 text-accent" />
-        <h2 className="text-xl font-bold text-foreground">Matriz de Permisos</h2>
+        <h2 className="text-xl font-bold text-foreground">Permisos por Perfil</h2>
       </div>
 
-      <div className="flex items-center gap-4">
-        <Select value={rolSeleccionado} onValueChange={setRolSeleccionado}>
-          <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {roles.map((r) => (
-              <SelectItem key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Badge variant="outline" className="gap-1"><Shield className="w-3 h-3" />{totalActivos} permisos activos</Badge>
-      </div>
+      {error && <p className="text-destructive text-sm">{error}</p>}
 
       <Card>
-        <CardContent className="p-0 overflow-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-secondary/50">
-                <th className="text-left p-3 text-muted-foreground font-medium">Módulo</th>
-                {acciones.map((a) => (
-                  <th key={a} className="text-center p-3 text-muted-foreground font-medium">{a}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {modulos.map((modulo) => (
-                <tr key={modulo} className="border-b border-border last:border-0 hover:bg-secondary/30">
-                  <td className="p-3 font-medium text-foreground">{modulo}</td>
-                  {acciones.map((accion) => (
-                    <td key={accion} className="text-center p-3">
-                      <Switch
-                        checked={matrix[modulo]?.[accion] ?? false}
-                        onCheckedChange={() => togglePermiso(modulo, accion)}
-                      />
-                    </td>
+        <CardContent className="p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Perfil</Label>
+              <Select value={profileId} onValueChange={setProfileId}>
+                <SelectTrigger><SelectValue placeholder="Seleccione un perfil" /></SelectTrigger>
+                <SelectContent>
+                  {(perfiles.data ?? []).map((p) => (
+                    <SelectItem key={p.profile_id} value={String(p.profile_id)}>{p.profile_na}</SelectItem>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Objeto</Label>
+              <Select value={objectNa} onValueChange={setObjectNa}>
+                <SelectTrigger><SelectValue placeholder="Seleccione un objeto" /></SelectTrigger>
+                <SelectContent>
+                  {(objetos.data ?? []).map((o) => (
+                    <SelectItem key={o.object_id} value={o.object_na}>{o.object_na}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Método</Label>
+              <Select value={methodNa} onValueChange={setMethodNa}>
+                <SelectTrigger><SelectValue placeholder="Seleccione un método" /></SelectTrigger>
+                <SelectContent>
+                  {(metodos.data ?? []).map((m) => (
+                    <SelectItem key={m.method_id} value={m.method_na}>{m.method_na}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={grant} disabled={!ready}><ShieldCheck className="w-4 h-4 mr-2" />Conceder</Button>
+            <Button variant="outline" onClick={revoke} disabled={!ready}><ShieldOff className="w-4 h-4 mr-2" />Revocar</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            El servidor aún no permite consultar los permisos actuales de un perfil; aquí solo se conceden o revocan.
+          </p>
         </CardContent>
       </Card>
-
-      <Button onClick={handleSave}><Save className="w-4 h-4 mr-2" />Guardar Permisos</Button>
     </div>
   );
 };

@@ -1,67 +1,66 @@
 import { useState } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Settings, Search, Edit, Power } from "lucide-react";
-import { toast } from "@/hooks/use-toast";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Settings, Search, Edit, Plus, Trash2 } from "lucide-react";
 import BackButton from "@/components/BackButton";
+import { TX } from "@/api/tx";
+import { runTx, useTx } from "@/hooks/useTx";
 
 interface Subsistema {
-  id: string;
-  nombre: string;
-  descripcion: string;
-  version: string;
-  estado: "activo" | "inactivo" | "mantenimiento";
-  modulos: number;
+  subsystem_id: number;
+  subsystem_na: string;
 }
 
-const mockSubsistemas: Subsistema[] = [
-  { id: "SS-001", nombre: "Gestión de Préstamos", descripcion: "Administración de solicitudes y préstamos de componentes", version: "2.1.0", estado: "activo", modulos: 4 },
-  { id: "SS-002", nombre: "Inventario", descripcion: "Control de stock y ubicación de componentes", version: "1.8.3", estado: "activo", modulos: 3 },
-  { id: "SS-003", nombre: "Reportería", descripcion: "Generación de reportes y estadísticas", version: "1.5.1", estado: "activo", modulos: 2 },
-  { id: "SS-004", nombre: "Notificaciones", descripcion: "Sistema de alertas y notificaciones a usuarios", version: "1.2.0", estado: "activo", modulos: 2 },
-  { id: "SS-005", nombre: "Auditoría", descripcion: "Registro y seguimiento de actividades del sistema", version: "1.0.0", estado: "mantenimiento", modulos: 1 },
-  { id: "SS-006", nombre: "Calendario Académico", descripcion: "Gestión de periodos y fechas académicas", version: "0.9.0", estado: "inactivo", modulos: 1 },
-];
-
-const estadoConfig: Record<string, { label: string; className: string }> = {
-  activo: { label: "Activo", className: "bg-emerald-600 hover:bg-emerald-700" },
-  inactivo: { label: "Inactivo", className: "bg-secondary text-secondary-foreground" },
-  mantenimiento: { label: "Mantenimiento", className: "bg-amber-500 hover:bg-amber-600 text-white" },
-};
+type SubsystemForm = { subsystem_id?: number; subsystem_na: string };
 
 const SubsistemaModule = ({ onBack }: { onBack: () => void }) => {
-  const [subsistemas, setSubsistemas] = useState(mockSubsistemas);
+  const { data, loading, error, reload } = useTx<Subsistema[]>(TX.subsystem.getAll);
   const [busqueda, setBusqueda] = useState("");
+  const [form, setForm] = useState<SubsystemForm | null>(null);
 
-  const filtered = subsistemas.filter((s) => s.nombre.toLowerCase().includes(busqueda.toLowerCase()));
+  const subsistemas = data ?? [];
+  const filtered = subsistemas.filter((s) => s.subsystem_na.toLowerCase().includes(busqueda.toLowerCase()));
 
-  const toggleEstado = (ss: Subsistema) => {
-    const nuevoEstado = ss.estado === "activo" ? "inactivo" : "activo";
-    setSubsistemas((prev) => prev.map((s) => s.id === ss.id ? { ...s, estado: nuevoEstado } : s));
-    toast({ title: `Subsistema ${nuevoEstado}`, description: `${ss.nombre} cambiado a ${nuevoEstado}.` });
+  const handleSave = async () => {
+    if (!form) return;
+    const ok = form.subsystem_id
+      ? await runTx(TX.subsystem.update, form, "Subsistema actualizado")
+      : await runTx(TX.subsystem.create, { subsystem_na: form.subsystem_na }, "Subsistema creado");
+    if (!ok) return;
+    setForm(null);
+    reload();
+  };
+
+  const handleDelete = async (s: Subsistema) => {
+    if (!window.confirm(`¿Eliminar el subsistema "${s.subsystem_na}"?`)) return;
+    if (await runTx(TX.subsystem.delete, { subsystem_id: s.subsystem_id }, "Subsistema eliminado")) reload();
   };
 
   return (
     <div className="space-y-6">
       <BackButton onClick={onBack} />
-      <div className="flex items-center gap-3">
-        <Settings className="w-6 h-6 text-accent" />
-        <h2 className="text-xl font-bold text-foreground">Subsistemas</h2>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Settings className="w-6 h-6 text-accent" />
+          <h2 className="text-xl font-bold text-foreground">Subsistemas</h2>
+        </div>
+        <Button size="sm" onClick={() => setForm({ subsystem_na: "" })}><Plus className="w-4 h-4 mr-1" /> Nuevo Subsistema</Button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Total</p><p className="text-2xl font-bold text-foreground">{subsistemas.length}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Activos</p><p className="text-2xl font-bold text-emerald-500">{subsistemas.filter(s => s.estado === "activo").length}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Módulos Totales</p><p className="text-2xl font-bold text-foreground">{subsistemas.reduce((a, s) => a + s.modulos, 0)}</p></CardContent></Card>
       </div>
 
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input placeholder="Buscar subsistema..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="pl-10" />
       </div>
+
+      {error && <p className="text-destructive text-sm">{error}</p>}
 
       <Card>
         <CardContent className="p-0">
@@ -70,31 +69,41 @@ const SubsistemaModule = ({ onBack }: { onBack: () => void }) => {
               <TableRow>
                 <TableHead>ID</TableHead>
                 <TableHead>Nombre</TableHead>
-                <TableHead>Descripción</TableHead>
-                <TableHead>Versión</TableHead>
-                <TableHead>Módulos</TableHead>
-                <TableHead>Estado</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((ss) => (
-                <TableRow key={ss.id}>
-                  <TableCell className="font-mono text-xs">{ss.id}</TableCell>
-                  <TableCell className="font-medium">{ss.nombre}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">{ss.descripcion}</TableCell>
-                  <TableCell><Badge variant="outline">{ss.version}</Badge></TableCell>
-                  <TableCell>{ss.modulos}</TableCell>
-                  <TableCell><Badge className={estadoConfig[ss.estado].className}>{estadoConfig[ss.estado].label}</Badge></TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => toggleEstado(ss)}><Power className="w-3 h-3 mr-1" />{ss.estado === "activo" ? "Desactivar" : "Activar"}</Button>
+              {filtered.map((s) => (
+                <TableRow key={s.subsystem_id}>
+                  <TableCell className="font-mono text-xs">{s.subsystem_id}</TableCell>
+                  <TableCell className="font-medium">{s.subsystem_na}</TableCell>
+                  <TableCell className="text-right space-x-1">
+                    <Button size="icon" variant="ghost" onClick={() => setForm({ ...s })} aria-label="Editar"><Edit className="w-4 h-4" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => handleDelete(s)} className="text-destructive hover:text-destructive" aria-label="Eliminar"><Trash2 className="w-4 h-4" /></Button>
                   </TableCell>
                 </TableRow>
               ))}
+              {!loading && filtered.length === 0 && <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-8">No se encontraron subsistemas</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog open={form !== null} onOpenChange={(open) => !open && setForm(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{form?.subsystem_id ? "Editar Subsistema" : "Nuevo Subsistema"}</DialogTitle></DialogHeader>
+          {form && (
+            <div className="space-y-2 py-2">
+              <Label>Nombre</Label>
+              <Input value={form.subsystem_na} onChange={(e) => setForm({ ...form, subsystem_na: e.target.value })} />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setForm(null)}>Cancelar</Button>
+            <Button onClick={handleSave}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import URULogo from "@/components/URULogo";
 import { FlaskConical } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { tx } from "@/api/client";
+import { TX } from "@/api/tx";
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : "Ocurrió un error inesperado");
 
 const Register = () => {
   const [nombre, setNombre] = useState("");
@@ -16,11 +19,27 @@ const Register = () => {
   const [correo, setCorreo] = useState("");
   const [clave, setClave] = useState("");
   const [confirmarClave, setConfirmarClave] = useState("");
-  const { register } = useAuth();
+  const [codigo, setCodigo] = useState("");
+  const [registrado, setRegistrado] = useState(false);
+  const [enviando, setEnviando] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const run = async (action: () => Promise<unknown>, success: string) => {
+    setEnviando(true);
+    try {
+      await action();
+      toast({ title: success });
+      return true;
+    } catch (error) {
+      toast({ title: "Error", description: messageOf(error), variant: "destructive" });
+      return false;
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (clave !== confirmarClave) {
       toast({
@@ -30,9 +49,28 @@ const Register = () => {
       });
       return;
     }
-    register({ nombre, apellido, cedula, role: "usuario", clave });
-    navigate("/dashboard");
+    const ok = await run(
+      () =>
+        tx(TX.auth.register, {
+          email: correo,
+          password: clave,
+          user_na: usuario,
+          person_ci: cedula,
+          person_na: nombre,
+          person_ln: apellido,
+        }),
+      "Registro exitoso",
+    );
+    if (ok) setRegistrado(true);
   };
+
+  const handleVerificar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (await run(() => tx(TX.auth.verifyEmail, { code: codigo.trim() }), "Correo verificado")) navigate("/login");
+  };
+
+  const reenviarCodigo = () =>
+    run(() => tx(TX.auth.requestEmailVerification, { identifier: correo }), "Código reenviado");
 
   return (
     <div className="min-h-screen flex items-center justify-center pt-5 bg-[url('/uru-blue-bg.png')] bg-cover bg-center relative overflow-hidden">
@@ -53,6 +91,28 @@ const Register = () => {
             <p className="text-muted-foreground text-sm">Crear nueva cuenta</p>
           </div>
 
+          {registrado ? (
+            <form onSubmit={handleVerificar} className="space-y-4">
+              <div className="p-4 bg-accent/10 border border-accent/30 rounded-lg text-sm text-foreground space-y-2">
+                <p>Cuenta creada. Si el servidor exige verificar el correo, se envió un código de 6 dígitos a <strong>{correo}</strong>; de lo contrario ya puede iniciar sesión.</p>
+                <p className="text-xs text-muted-foreground">
+                  Si el servidor no tiene correo configurado, el código aparece en la consola del servidor:
+                  pídaselo al administrador.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-foreground">Código de verificación</Label>
+                <Input value={codigo} onChange={(e) => setCodigo(e.target.value)} required maxLength={6}
+                  className="bg-secondary border-border text-foreground placeholder:text-muted-foreground h-9 text-sm" placeholder="123456" />
+              </div>
+              <Button type="submit" disabled={enviando} className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold h-9 text-sm">
+                Verificar correo
+              </Button>
+              <Button type="button" variant="outline" disabled={enviando} onClick={reenviarCodigo} className="w-full h-9 text-sm">
+                Reenviar código
+              </Button>
+            </form>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -89,7 +149,7 @@ const Register = () => {
             <div className="space-y-1">
               <Label className="text-foreground">Clave</Label>
               <Input type="password" value={clave} onChange={(e) => setClave(e.target.value)} required
-                className="bg-secondary border-border text-foreground placeholder:text-muted-foreground h-9 text-sm" placeholder="Ingrese su clave" />
+                className="bg-secondary border-border text-foreground placeholder:text-muted-foreground h-9 text-sm" placeholder="Mínimo 8 caracteres" minLength={8} />
             </div>
 
             <div className="space-y-1">
@@ -101,10 +161,11 @@ const Register = () => {
               )}
             </div>
 
-            <Button type="submit" className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold h-9 text-sm">
+            <Button type="submit" disabled={enviando} className="w-full bg-primary hover:bg-accent text-primary-foreground font-semibold h-9 text-sm">
               Registrarse
             </Button>
           </form>
+          )}
 
           <div className="mt-6 text-center">
             <Link to="/login" className="text-accent hover:text-accent/80 text-sm transition-colors">
