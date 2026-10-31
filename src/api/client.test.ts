@@ -77,4 +77,20 @@ describe("api client", () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
   });
+
+  it("tx keeps the session when the user lacks privileges (403)", async () => {
+    const { tx, UNAUTHORIZED_EVENT } = await import("./client");
+    const onUnauthorized = vi.fn();
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    const denied = () => json(403, { code: 403, msg: "No tiene privilegios" });
+    fetchMock
+      .mockResolvedValueOnce(json(200, { csrfToken: "t" }))
+      .mockResolvedValueOnce(denied())
+      .mockResolvedValueOnce(json(200, { csrfToken: "t2" }))
+      .mockResolvedValueOnce(denied());
+
+    await expect(tx(1113)).rejects.toThrow("No tiene privilegios");
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  });
 });

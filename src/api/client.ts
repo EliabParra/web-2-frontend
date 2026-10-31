@@ -62,14 +62,14 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
 
 /**
  * Runs a backend transaction. Without a valid session the backend answers 401
- * ("Debe iniciar sesión") or 403 (public profile without privileges), so both log out.
+ * ("Debe iniciar sesión"), which logs out; a 403 only means missing privileges.
  */
 export async function tx<T>(id: number, params: Record<string, unknown> = {}): Promise<T> {
   try {
     const body = await post<ApiBody>("/toProccess", { tx: id, params });
     return body.data as T;
   } catch (error) {
-    if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+    if (error instanceof ApiError && error.status === 401) {
       window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
     }
     throw error;
