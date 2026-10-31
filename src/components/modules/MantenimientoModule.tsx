@@ -19,7 +19,7 @@ const EQUIPMENT_TYPE = { category_type_id: 1 };
 const COMPONENT_TYPE = { category_type_id: 2 };
 
 type Tipo = "equipo" | "componente";
-interface Item { item_id: number; item_cod: number; item_na: string; category_id: number }
+interface Item { item_id: number; item_cod: string; item_na: string; category_id: number }
 interface Registro extends Item { tipo: Tipo }
 interface Categoria { category_id: number; category_de: string }
 type Form = { item_id?: number; tipo: Tipo; item_cod: string; item_na: string; category_id: string };
@@ -71,7 +71,7 @@ const MantenimientoModule = () => {
       toast.error("Código, nombre y categoría son obligatorios.");
       return;
     }
-    const params = { item_cod: Number(form.item_cod), item_na: form.item_na.trim(), category_id: Number(form.category_id) };
+    const params = { item_cod: form.item_cod.trim(), item_na: form.item_na.trim(), category_id: Number(form.category_id) };
     const res = form.item_id
       ? await runTx(TX_DE[form.tipo].update, { item_id: form.item_id, ...params }, `"${params.item_na}" fue modificado correctamente.`)
       : await runTx(TX_DE[form.tipo].create, params, `"${params.item_na}" fue añadido.`);
@@ -208,7 +208,7 @@ const MantenimientoModule = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Código *</Label>
-                  <IntegerInput min={1} value={form.item_cod} onChange={(e) => setForm({ ...form, item_cod: e.target.value })} placeholder="Ej: 1001" />
+                  <Input maxLength={50} value={form.item_cod} onChange={(e) => setForm({ ...form, item_cod: e.target.value })} placeholder="Ej: R-100" />
                 </div>
                 <div className="space-y-2">
                   <Label>Tipo</Label>

@@ -25,14 +25,14 @@ interface InventarioRow {
   inventory_id: number;
   inventory_qt: number;
   item_id: number;
-  item_cod: number;
+  item_cod: string;
   item_na: string;
   location_id: number;
   location_de: string;
   location_sh: number;
   location_dr: number;
 }
-interface Componente { item_id: number; item_cod: number; item_na: string; category_id: number }
+interface Componente { item_id: number; item_cod: string; item_na: string; category_id: number }
 interface Categoria { category_id: number; category_de: string }
 interface Ubicacion { location_id: number; location_de: string; location_sh: number; location_dr: number }
 
@@ -62,7 +62,7 @@ const emptyForm: Form = { item_id: NEW_COMPONENT, item_cod: "", item_na: "", cat
 function exportCsv(rows: InventarioRow[]) {
   const lines = [
     "Código,Componente,Cantidad,Ubicación",
-    ...rows.map((r) => [r.item_cod, `"${r.item_na}"`, r.inventory_qt, `"${ubicacionDe(r)}"`].join(",")),
+    ...rows.map((r) => [`"${r.item_cod}"`, `"${r.item_na}"`, r.inventory_qt, `"${ubicacionDe(r)}"`].join(",")),
   ];
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
@@ -108,7 +108,7 @@ const InventarioModule = () => {
   };
 
   const saveComponent = async (form: Form): Promise<number | undefined> => {
-    const fields = { item_cod: form.item_cod, item_na: form.item_na, category_id: form.category_id };
+    const fields = { item_cod: form.item_cod.trim(), item_na: form.item_na, category_id: form.category_id };
     if (form.item_id === NEW_COMPONENT) {
       const created = await runTx<Componente>(TX.component.create, fields, "Componente creado");
       return created?.data.item_id;
@@ -267,7 +267,7 @@ const InventarioModule = () => {
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="item_cod">Código</Label>
-                      <IntegerInput id="item_cod" min={1} value={form.item_cod} onChange={(e) => setField("item_cod", e.target.value)} />
+                      <Input id="item_cod" maxLength={50} value={form.item_cod} onChange={(e) => setField("item_cod", e.target.value)} />
                     </div>
                     <div className="space-y-2 col-span-2">
                       <Label htmlFor="item_na">Nombre</Label>
