@@ -11,6 +11,7 @@ import { Wrench, Search, Plus, Pencil, Trash2, Package, AlertTriangle } from "lu
 import { toast } from "sonner";
 import { TX } from "@/api/tx";
 import { runTx, useTx } from "@/hooks/useTx";
+import CategoriasPanel from "./CategoriasPanel";
 
 // Category types in the backend seed: 1 = "Equipo", 2 = "Componente".
 const EQUIPMENT_TYPE = { category_type_id: 1 };
@@ -264,6 +265,8 @@ const MantenimientoModule = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CategoriasPanel onChange={() => { catEquipos.reload(); catComponentes.reload(); }} />
     </div>
   );
 };
