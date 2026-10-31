@@ -1,50 +1,21 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { BarChart3, Download, TrendingUp, Users, Package, AlertTriangle } from "lucide-react";
 import BackButton from "@/components/BackButton";
+import { TX } from "@/api/tx";
+import { useTx } from "@/hooks/useTx";
 
-const prestamosPorMes = [
-  { mes: "Ene", prestamos: 24, devoluciones: 20 },
-  { mes: "Feb", prestamos: 18, devoluciones: 16 },
-  { mes: "Mar", prestamos: 32, devoluciones: 28 },
-  { mes: "Abr", prestamos: 27, devoluciones: 25 },
-  { mes: "May", prestamos: 41, devoluciones: 35 },
-  { mes: "Jun", prestamos: 35, devoluciones: 33 },
-  { mes: "Jul", prestamos: 20, devoluciones: 18 },
-  { mes: "Ago", prestamos: 29, devoluciones: 27 },
-  { mes: "Sep", prestamos: 38, devoluciones: 34 },
-  { mes: "Oct", prestamos: 33, devoluciones: 30 },
-  { mes: "Nov", prestamos: 45, devoluciones: 40 },
-  { mes: "Dic", prestamos: 22, devoluciones: 20 },
-];
+interface Usuario { user_id: number; user_na: string }
+interface Reporte<R, S> { data: R[]; summary: S }
+type Vencidos = Reporte<{ user_id: number; loans_overdue: number; items_overdue: number }, { total_loans_overdue: number; total_items_overdue: number }>;
+type SolvenciaRow = { user_id: number; active_loans: number; overdue_loans: number; borrowed_items: number; is_solvency_ok: boolean };
+type Solvencia = Reporte<SolvenciaRow, { total_users: number; solvent_users: number; insolvent_users: number }>;
+type Devoluciones = Reporte<unknown, { total_events: number; completed_events: number; partial_events: number; damaged_events: number }>;
 
-const componentesSolicitados = [
-  { nombre: "Resistencias", cantidad: 85, fill: "hsl(var(--primary))" },
-  { nombre: "Capacitores", cantidad: 62, fill: "hsl(170, 60%, 45%)" },
-  { nombre: "Protoboard", cantidad: 48, fill: "hsl(45, 80%, 55%)" },
-  { nombre: "Multímetro", cantidad: 37, fill: "hsl(340, 65%, 50%)" },
-  { nombre: "Osciloscopio", cantidad: 25, fill: "hsl(270, 55%, 55%)" },
-  { nombre: "Cables", cantidad: 70, fill: "hsl(140, 50%, 45%)" },
-];
-
-const usuariosActivos = [
-  { mes: "Ene", usuarios: 15 }, { mes: "Feb", usuarios: 12 }, { mes: "Mar", usuarios: 22 },
-  { mes: "Abr", usuarios: 18 }, { mes: "May", usuarios: 28 }, { mes: "Jun", usuarios: 25 },
-  { mes: "Jul", usuarios: 14 }, { mes: "Ago", usuarios: 20 }, { mes: "Sep", usuarios: 26 },
-  { mes: "Oct", usuarios: 23 }, { mes: "Nov", usuarios: 30 }, { mes: "Dic", usuarios: 16 },
-];
-
-const incidenciasPorMes = [
-  { mes: "Ene", daños: 2, perdidas: 1 }, { mes: "Feb", daños: 1, perdidas: 0 }, { mes: "Mar", daños: 3, perdidas: 1 },
-  { mes: "Abr", daños: 0, perdidas: 0 }, { mes: "May", daños: 4, perdidas: 2 }, { mes: "Jun", daños: 2, perdidas: 1 },
-  { mes: "Jul", daños: 1, perdidas: 0 }, { mes: "Ago", daños: 2, perdidas: 1 }, { mes: "Sep", daños: 3, perdidas: 0 },
-  { mes: "Oct", daños: 1, perdidas: 1 }, { mes: "Nov", daños: 5, perdidas: 2 }, { mes: "Dic", daños: 1, perdidas: 0 },
-];
-
-const COLORS = componentesSolicitados.map(c => c.fill);
+const DIAS: Record<string, number> = { mensual: 30, trimestral: 90, anual: 365 };
 
 const tooltipStyle = {
   backgroundColor: "hsl(var(--card))",
@@ -53,17 +24,48 @@ const tooltipStyle = {
   color: "hsl(var(--foreground))",
 };
 
+const axisTick = { fill: "hsl(var(--muted-foreground))", fontSize: 12 };
+
+function exportCsv(rows: SolvenciaRow[], nombre: (id: number) => string) {
+  const lines = [
+    "Usuario,Préstamos activos,Préstamos vencidos,Ítems prestados,Solvente",
+    ...rows.map((r) => [`"${nombre(r.user_id)}"`, r.active_loans, r.overdue_loans, r.borrowed_items, r.is_solvency_ok ? "Sí" : "No"].join(",")),
+  ];
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  link.download = "solvencia.csv";
+  link.click();
+}
+
 interface Props {
   onBack: () => void;
 }
 
 const ReportesAdminModule = ({ onBack }: Props) => {
-  const [periodo, setPeriodo] = useState("anual");
+  const [periodo, setPeriodo] = useState("todo");
+  const desde = useMemo(
+    () => (DIAS[periodo] ? { from_dt: new Date(Date.now() - DIAS[periodo] * 86_400_000).toISOString() } : {}),
+    [periodo],
+  );
+  const vencidos = useTx<Vencidos>(TX.report.create, { report_ty: "overdue_loans", ...desde });
+  const solvencia = useTx<Solvencia>(TX.report.create, { report_ty: "solvency", ...desde });
+  const devoluciones = useTx<Devoluciones>(TX.report.create, { report_ty: "devolution_stats", ...desde });
+  const usuarios = useTx<Usuario[]>(TX.user.getAll);
 
-  const totalPrestamos = prestamosPorMes.reduce((s, m) => s + m.prestamos, 0);
-  const totalDevoluciones = prestamosPorMes.reduce((s, m) => s + m.devoluciones, 0);
-  const tasaDevolucion = ((totalDevoluciones / totalPrestamos) * 100).toFixed(1);
-  const totalIncidencias = incidenciasPorMes.reduce((s, m) => s + m.daños + m.perdidas, 0);
+  const nombre = (id: number) => usuarios.data?.find((u) => u.user_id === id)?.user_na ?? `#${id}`;
+  const error = vencidos.error ?? solvencia.error ?? devoluciones.error;
+  const sol = solvencia.data?.summary;
+  const dev = devoluciones.data?.summary;
+  const solvenciaRows = solvencia.data?.data ?? [];
+  const prestamosPorUsuario = solvenciaRows.map((r) => ({ usuario: nombre(r.user_id), activos: r.active_loans, vencidos: r.overdue_loans }));
+  const vencidosPorUsuario = (vencidos.data?.data ?? []).map((r) => ({ usuario: nombre(r.user_id), items: r.items_overdue }));
+  const estadosDevolucion = [
+    { nombre: "Completas", cantidad: dev?.completed_events ?? 0, fill: "hsl(140, 50%, 45%)" },
+    { nombre: "Parciales", cantidad: dev?.partial_events ?? 0, fill: "hsl(45, 80%, 55%)" },
+    { nombre: "Con daño", cantidad: dev?.damaged_events ?? 0, fill: "hsl(var(--destructive))" },
+  ].filter((e) => e.cantidad > 0);
+
+  const vacio = (texto: string) => <p className="text-sm text-muted-foreground text-center pt-24">{texto}</p>;
 
   return (
     <div className="space-y-6">
@@ -80,90 +82,79 @@ const ReportesAdminModule = ({ onBack }: Props) => {
           <Select value={periodo} onValueChange={setPeriodo}>
             <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="mensual">Mensual</SelectItem>
-              <SelectItem value="trimestral">Trimestral</SelectItem>
-              <SelectItem value="anual">Anual</SelectItem>
+              <SelectItem value="todo">Todo</SelectItem>
+              <SelectItem value="mensual">Último mes</SelectItem>
+              <SelectItem value="trimestral">Último trimestre</SelectItem>
+              <SelectItem value="anual">Último año</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline"><Download className="w-4 h-4 mr-2" />Exportar</Button>
+          <Button variant="outline" disabled={!solvenciaRows.length} onClick={() => exportCsv(solvenciaRows, nombre)}>
+            <Download className="w-4 h-4 mr-2" />Exportar
+          </Button>
         </div>
       </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <Card><CardContent className="p-4 flex items-center gap-3"><TrendingUp className="w-5 h-5 text-primary" /><div><p className="text-2xl font-bold text-foreground">{totalPrestamos}</p><p className="text-xs text-muted-foreground">Préstamos Totales</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><Package className="w-5 h-5 text-accent" /><div><p className="text-2xl font-bold text-foreground">{tasaDevolucion}%</p><p className="text-xs text-muted-foreground">Tasa Devolución</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><Users className="w-5 h-5 text-primary" /><div><p className="text-2xl font-bold text-foreground">{usuariosActivos.reduce((s, m) => s + m.usuarios, 0)}</p><p className="text-xs text-muted-foreground">Usuarios Activos (Año)</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-destructive" /><div><p className="text-2xl font-bold text-foreground">{totalIncidencias}</p><p className="text-xs text-muted-foreground">Incidencias</p></div></CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3"><TrendingUp className="w-5 h-5 text-primary" /><div><p className="text-2xl font-bold text-foreground">{vencidos.data?.summary.total_loans_overdue ?? 0}</p><p className="text-xs text-muted-foreground">Préstamos Vencidos</p></div></CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3"><Package className="w-5 h-5 text-accent" /><div><p className="text-2xl font-bold text-foreground">{dev?.total_events ?? 0}</p><p className="text-xs text-muted-foreground">Devoluciones Registradas</p></div></CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3"><Users className="w-5 h-5 text-primary" /><div><p className="text-2xl font-bold text-foreground">{sol?.solvent_users ?? 0} / {sol?.total_users ?? 0}</p><p className="text-xs text-muted-foreground">Usuarios Solventes</p></div></CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-destructive" /><div><p className="text-2xl font-bold text-foreground">{dev?.damaged_events ?? 0}</p><p className="text-xs text-muted-foreground">Devoluciones con Daño</p></div></CardContent></Card>
       </div>
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Préstamos vs Devoluciones */}
         <Card className="p-5">
-          <h3 className="text-base font-semibold text-foreground mb-4">Préstamos vs Devoluciones</h3>
+          <h3 className="text-base font-semibold text-foreground mb-4">Préstamos Activos vs Vencidos por Usuario</h3>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={prestamosPorMes}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="mes" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend />
-                <Bar dataKey="prestamos" name="Préstamos" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="devoluciones" name="Devoluciones" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {prestamosPorUsuario.length === 0 ? vacio("Sin préstamos en el período") : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={prestamosPorUsuario}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="usuario" tick={axisTick} />
+                  <YAxis allowDecimals={false} tick={axisTick} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend />
+                  <Bar dataKey="activos" name="Activos" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="vencidos" name="Vencidos" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </Card>
 
-        {/* Componentes más solicitados */}
         <Card className="p-5">
-          <h3 className="text-base font-semibold text-foreground mb-4">Componentes Más Solicitados</h3>
+          <h3 className="text-base font-semibold text-foreground mb-4">Estado de las Devoluciones</h3>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={componentesSolicitados} dataKey="cantidad" nameKey="nombre" cx="50%" cy="50%" outerRadius={90} label={({ nombre, percent }) => `${nombre} ${(percent * 100).toFixed(0)}%`} labelLine={{ stroke: "hsl(var(--muted-foreground))" }}>
-                  {componentesSolicitados.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend formatter={v => <span className="text-muted-foreground">{v}</span>} />
-              </PieChart>
-            </ResponsiveContainer>
+            {estadosDevolucion.length === 0 ? vacio("Sin devoluciones en el período") : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={estadosDevolucion} dataKey="cantidad" nameKey="nombre" cx="50%" cy="50%" outerRadius={90} label={({ nombre, percent }) => `${nombre} ${(percent * 100).toFixed(0)}%`} labelLine={{ stroke: "hsl(var(--muted-foreground))" }}>
+                    {estadosDevolucion.map((e) => <Cell key={e.nombre} fill={e.fill} />)}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend formatter={v => <span className="text-muted-foreground">{v}</span>} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </Card>
 
-        {/* Usuarios activos */}
-        <Card className="p-5">
-          <h3 className="text-base font-semibold text-foreground mb-4">Usuarios Activos por Mes</h3>
+        <Card className="p-5 lg:col-span-2">
+          <h3 className="text-base font-semibold text-foreground mb-4">Ítems Vencidos por Usuario</h3>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={usuariosActivos}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="mes" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Area type="monotone" dataKey="usuarios" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.2)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-
-        {/* Incidencias */}
-        <Card className="p-5">
-          <h3 className="text-base font-semibold text-foreground mb-4">Incidencias (Daños y Pérdidas)</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={incidenciasPorMes}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="mes" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend />
-                <Line type="monotone" dataKey="daños" name="Daños" stroke="hsl(var(--destructive))" strokeWidth={2} />
-                <Line type="monotone" dataKey="perdidas" name="Pérdidas" stroke="hsl(45, 80%, 55%)" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+            {vencidosPorUsuario.length === 0 ? vacio("Sin préstamos vencidos") : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={vencidosPorUsuario}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis dataKey="usuario" tick={axisTick} />
+                  <YAxis allowDecimals={false} tick={axisTick} />
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Bar dataKey="items" name="Ítems" fill="hsl(45, 80%, 55%)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </Card>
       </div>

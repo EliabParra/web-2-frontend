@@ -8,92 +8,89 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
-import { Bell, Search, Send, Plus, Trash2, Mail, AlertTriangle, CheckCircle, Users } from "lucide-react";
-import { toast } from "@/hooks/use-toast";
+import { Bell, Search, Send, Plus, Trash2, Mail, Users } from "lucide-react";
+import { toast } from "sonner";
 import BackButton from "@/components/BackButton";
+import { TX } from "@/api/tx";
+import { tx } from "@/api/client";
+import { runTx, useTx } from "@/hooks/useTx";
+import type { Notificacion } from "@/components/NotificationsPanel";
 
-interface Notificacion {
-  id: string;
-  destinatario: string;
-  destinatarioTipo: "usuario" | "grupo" | "todos";
-  tipo: "vencimiento" | "recordatorio" | "informacion" | "urgente" | "sistema";
-  asunto: string;
-  mensaje: string;
-  fecha: string;
-  estado: "enviada" | "pendiente" | "leida" | "fallida";
-}
+interface Usuario { user_id: number; user_na: string; person_na: string | null; person_ln: string | null }
 
-const initialNotificaciones: Notificacion[] = [
-  { id: "N001", destinatario: "Carlos García", destinatarioTipo: "usuario", tipo: "vencimiento", asunto: "Préstamo vencido", mensaje: "Su préstamo del Multímetro Fluke ha vencido. Por favor acérquese al laboratorio.", fecha: "2025-03-15", estado: "enviada" },
-  { id: "N002", destinatario: "Todos los usuarios", destinatarioTipo: "todos", tipo: "informacion", asunto: "Horario especial", mensaje: "El laboratorio estará cerrado el viernes 21 de marzo por mantenimiento general.", fecha: "2025-03-14", estado: "leida" },
-  { id: "N003", destinatario: "Ana Martínez", destinatarioTipo: "usuario", tipo: "recordatorio", asunto: "Recordatorio de devolución", mensaje: "Recuerde devolver el Protoboard antes del viernes.", fecha: "2025-03-13", estado: "enviada" },
-  { id: "N004", destinatario: "Grupo Supervisores", destinatarioTipo: "grupo", tipo: "sistema", asunto: "Actualización de inventario", mensaje: "Se han añadido 50 nuevos componentes al inventario del Lab A.", fecha: "2025-03-12", estado: "leida" },
-  { id: "N005", destinatario: "Luis Rodríguez", destinatarioTipo: "usuario", tipo: "urgente", asunto: "Componente dañado", mensaje: "Se reportó daño en el osciloscopio prestado. Contacte al supervisor.", fecha: "2025-03-11", estado: "fallida" },
-];
+const TIPOS = ["Vencimiento", "Recordatorio", "Información", "Urgente", "Sistema"] as const;
+const ALL_USERS = "todos";
 
-const tipoBadge: Record<string, { className: string; label: string }> = {
-  vencimiento: { className: "bg-destructive/15 text-destructive border-destructive/30", label: "Vencimiento" },
-  recordatorio: { className: "bg-amber-500/15 text-amber-500 border-amber-500/30", label: "Recordatorio" },
-  informacion: { className: "bg-blue-500/15 text-blue-500 border-blue-500/30", label: "Información" },
-  urgente: { className: "bg-red-600/15 text-red-500 border-red-600/30", label: "Urgente" },
-  sistema: { className: "bg-muted text-muted-foreground border-border", label: "Sistema" },
+const tipoBadge: Record<string, string> = {
+  Vencimiento: "bg-destructive/15 text-destructive border-destructive/30",
+  Recordatorio: "bg-amber-500/15 text-amber-500 border-amber-500/30",
+  Información: "bg-blue-500/15 text-blue-500 border-blue-500/30",
+  Urgente: "bg-red-600/15 text-red-500 border-red-600/30",
+  Sistema: "bg-muted text-muted-foreground border-border",
 };
 
-const estadoBadge: Record<string, { variant: "default" | "destructive" | "secondary" | "outline"; label: string }> = {
-  enviada: { variant: "default", label: "Enviada" },
-  pendiente: { variant: "secondary", label: "Pendiente" },
-  leida: { variant: "outline", label: "Leída" },
-  fallida: { variant: "destructive", label: "Fallida" },
-};
+const nombreDe = (u?: Usuario) =>
+  u ? [u.person_na, u.person_ln].filter(Boolean).join(" ") || u.user_na : "Usuario desconocido";
+
+const emptyForm = { destinatario: "", tipo: "Información", asunto: "", mensaje: "" };
 
 interface Props {
   onBack: () => void;
 }
 
 const NotificacionesAdminModule = ({ onBack }: Props) => {
-  const [notificaciones, setNotificaciones] = useState(initialNotificaciones);
+  const usuarios = useTx<Usuario[]>(TX.user.getAll);
+  const [enviadas, setEnviadas] = useState<Notificacion[]>([]);
   const [search, setSearch] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("todos");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState<Notificacion | null>(null);
+  const [form, setForm] = useState(emptyForm);
 
-  const [form, setForm] = useState({ destinatario: "", destinatarioTipo: "usuario" as Notificacion["destinatarioTipo"], tipo: "informacion" as Notificacion["tipo"], asunto: "", mensaje: "" });
+  const usuarioDe = (id: number) => usuarios.data?.find((u) => u.user_id === id);
 
-  const filtered = notificaciones.filter(n => {
-    const matchSearch = n.destinatario.toLowerCase().includes(search.toLowerCase()) || n.asunto.toLowerCase().includes(search.toLowerCase());
-    const matchTipo = filtroTipo === "todos" || n.tipo === filtroTipo;
+  const filtered = enviadas.filter((n) => {
+    const q = search.toLowerCase();
+    const matchSearch = nombreDe(usuarioDe(n.user_id)).toLowerCase().includes(q) || (n.notification_tit ?? "").toLowerCase().includes(q);
+    const matchTipo = filtroTipo === "todos" || n.notification_ty === filtroTipo;
     return matchSearch && matchTipo;
   });
 
-  const enviadas = notificaciones.filter(n => n.estado === "enviada").length;
-  const pendientes = notificaciones.filter(n => n.estado === "pendiente").length;
-  const fallidas = notificaciones.filter(n => n.estado === "fallida").length;
-
   const openNew = () => {
-    setForm({ destinatario: "", destinatarioTipo: "usuario", tipo: "informacion", asunto: "", mensaje: "" });
+    setForm(emptyForm);
     setDialogOpen(true);
   };
 
-  const handleSend = () => {
-    if (!form.destinatario || !form.asunto || !form.mensaje) {
-      toast({ title: "Error", description: "Complete todos los campos", variant: "destructive" });
+  const handleSend = async () => {
+    if (!form.destinatario || !form.asunto.trim() || !form.mensaje.trim()) {
+      toast.error("Complete todos los campos");
       return;
     }
-    const nueva: Notificacion = {
-      id: `N${String(notificaciones.length + 1).padStart(3, "0")}`,
-      ...form,
-      fecha: new Date().toISOString().split("T")[0],
-      estado: "enviada",
-    };
-    setNotificaciones(prev => [nueva, ...prev]);
-    toast({ title: "Notificación enviada", description: `Enviada a ${form.destinatario}` });
+    const base = { notification_ty: form.tipo, notification_tit: form.asunto.trim(), notification_msg: form.mensaje.trim() };
+
+    if (form.destinatario === ALL_USERS) {
+      const results = await Promise.allSettled(
+        (usuarios.data ?? []).map((u) => tx<Notificacion>(TX.notification.create, { ...base, user_id: u.user_id })),
+      );
+      const ok = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+      setEnviadas((prev) => [...ok, ...prev]);
+      if (ok.length < results.length) toast.error(`${results.length - ok.length} notificación(es) no se pudieron enviar`);
+      if (ok.length) toast.success(`Notificación enviada a ${ok.length} usuario(s)`);
+      if (ok.length) setDialogOpen(false);
+      return;
+    }
+
+    const userId = Number(form.destinatario);
+    const res = await runTx<Notificacion>(TX.notification.create, { ...base, user_id: userId }, `Enviada a ${nombreDe(usuarioDe(userId))}`);
+    if (!res) return;
+    setEnviadas((prev) => [res.data, ...prev]);
     setDialogOpen(false);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteDialog) return;
-    setNotificaciones(prev => prev.filter(n => n.id !== deleteDialog.id));
-    toast({ title: "Notificación eliminada", description: `${deleteDialog.id} eliminada` });
+    const res = await runTx(TX.notification.delete, { id: deleteDialog.notification_id }, "Notificación eliminada");
+    if (res) setEnviadas((prev) => prev.filter((n) => n.notification_id !== deleteDialog.notification_id));
     setDeleteDialog(null);
   };
 
@@ -108,26 +105,24 @@ const NotificacionesAdminModule = ({ onBack }: Props) => {
         <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" />Nueva Notificación</Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card><CardContent className="p-4 flex items-center gap-3"><Mail className="w-5 h-5 text-primary" /><div><p className="text-2xl font-bold text-foreground">{enviadas}</p><p className="text-xs text-muted-foreground">Enviadas</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><CheckCircle className="w-5 h-5 text-accent" /><div><p className="text-2xl font-bold text-foreground">{pendientes}</p><p className="text-xs text-muted-foreground">Pendientes</p></div></CardContent></Card>
-        <Card><CardContent className="p-4 flex items-center gap-3"><AlertTriangle className="w-5 h-5 text-destructive" /><div><p className="text-2xl font-bold text-foreground">{fallidas}</p><p className="text-xs text-muted-foreground">Fallidas</p></div></CardContent></Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card><CardContent className="p-4 flex items-center gap-3"><Mail className="w-5 h-5 text-primary" /><div><p className="text-2xl font-bold text-foreground">{enviadas.length}</p><p className="text-xs text-muted-foreground">Enviadas en esta sesión</p></div></CardContent></Card>
+        <Card><CardContent className="p-4 flex items-center gap-3"><Users className="w-5 h-5 text-accent" /><div><p className="text-2xl font-bold text-foreground">{usuarios.data?.length ?? 0}</p><p className="text-xs text-muted-foreground">Usuarios destinatarios</p></div></CardContent></Card>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <CardTitle className="text-base">Historial de Notificaciones</CardTitle>
+            <div>
+              <CardTitle className="text-base">Enviadas en esta sesión</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">Cada usuario ve sus notificaciones en la campana; el sistema no ofrece un historial global.</p>
+            </div>
             <div className="flex items-center gap-3">
               <Select value={filtroTipo} onValueChange={setFiltroTipo}>
                 <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos los tipos</SelectItem>
-                  <SelectItem value="vencimiento">Vencimiento</SelectItem>
-                  <SelectItem value="recordatorio">Recordatorio</SelectItem>
-                  <SelectItem value="informacion">Información</SelectItem>
-                  <SelectItem value="urgente">Urgente</SelectItem>
-                  <SelectItem value="sistema">Sistema</SelectItem>
+                  {TIPOS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                 </SelectContent>
               </Select>
               <div className="relative w-56">
@@ -152,18 +147,18 @@ const NotificacionesAdminModule = ({ onBack }: Props) => {
             </TableHeader>
             <TableBody>
               {filtered.map(n => (
-                <TableRow key={n.id}>
-                  <TableCell className="font-mono text-xs">{n.id}</TableCell>
-                  <TableCell className="text-xs">{n.fecha}</TableCell>
+                <TableRow key={n.notification_id}>
+                  <TableCell className="font-mono text-xs">{n.notification_id}</TableCell>
+                  <TableCell className="text-xs">{new Date(n.notification_dt).toLocaleString("es")}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      {n.destinatarioTipo === "todos" ? <Users className="w-3.5 h-3.5 text-muted-foreground" /> : <Mail className="w-3.5 h-3.5 text-muted-foreground" />}
-                      <span className="font-medium">{n.destinatario}</span>
+                      <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="font-medium">{nombreDe(usuarioDe(n.user_id))}</span>
                     </div>
                   </TableCell>
-                  <TableCell><Badge variant="outline" className={tipoBadge[n.tipo].className}>{tipoBadge[n.tipo].label}</Badge></TableCell>
-                  <TableCell className="max-w-[200px] truncate">{n.asunto}</TableCell>
-                  <TableCell><Badge variant={estadoBadge[n.estado].variant}>{estadoBadge[n.estado].label}</Badge></TableCell>
+                  <TableCell><Badge variant="outline" className={tipoBadge[n.notification_ty ?? ""] ?? tipoBadge.Sistema}>{n.notification_ty}</Badge></TableCell>
+                  <TableCell className="max-w-[200px] truncate">{n.notification_tit}</TableCell>
+                  <TableCell><Badge variant={n.notification_read ? "outline" : "default"}>{n.notification_read ? "Leída" : "No leída"}</Badge></TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" onClick={() => setDeleteDialog(n)} className="text-destructive hover:text-destructive"><Trash2 className="w-4 h-4" /></Button>
                   </TableCell>
@@ -180,44 +175,35 @@ const NotificacionesAdminModule = ({ onBack }: Props) => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Nueva Notificación</DialogTitle>
-            <DialogDescription>Redacte y envíe una notificación a usuarios o grupos.</DialogDescription>
+            <DialogDescription>Redacte y envíe una notificación a un usuario o a todos.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Tipo de Destinatario</Label>
-                <Select value={form.destinatarioTipo} onValueChange={v => setForm({ ...form, destinatarioTipo: v as Notificacion["destinatarioTipo"] })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Label>Destinatario</Label>
+                <Select value={form.destinatario} onValueChange={v => setForm({ ...form, destinatario: v })}>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar usuario" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="usuario">Usuario</SelectItem>
-                    <SelectItem value="grupo">Grupo</SelectItem>
-                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value={ALL_USERS}>Todos los usuarios</SelectItem>
+                    {(usuarios.data ?? []).map((u) => (
+                      <SelectItem key={u.user_id} value={String(u.user_id)}>{nombreDe(u)}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Destinatario</Label>
-                <Input placeholder={form.destinatarioTipo === "todos" ? "Todos los usuarios" : "Nombre..."} value={form.destinatario} onChange={e => setForm({ ...form, destinatario: e.target.value })} disabled={form.destinatarioTipo === "todos"} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Tipo</Label>
-                <Select value={form.tipo} onValueChange={v => setForm({ ...form, tipo: v as Notificacion["tipo"] })}>
+                <Select value={form.tipo} onValueChange={v => setForm({ ...form, tipo: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vencimiento">Vencimiento</SelectItem>
-                    <SelectItem value="recordatorio">Recordatorio</SelectItem>
-                    <SelectItem value="informacion">Información</SelectItem>
-                    <SelectItem value="urgente">Urgente</SelectItem>
-                    <SelectItem value="sistema">Sistema</SelectItem>
+                    {TIPOS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Asunto</Label>
-                <Input value={form.asunto} onChange={e => setForm({ ...form, asunto: e.target.value })} />
-              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Asunto</Label>
+              <Input value={form.asunto} onChange={e => setForm({ ...form, asunto: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label>Mensaje</Label>
@@ -236,7 +222,7 @@ const NotificacionesAdminModule = ({ onBack }: Props) => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Eliminar Notificación</DialogTitle>
-            <DialogDescription>¿Está seguro de eliminar la notificación {deleteDialog?.id}?</DialogDescription>
+            <DialogDescription>¿Está seguro de eliminar la notificación {deleteDialog?.notification_id}?</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialog(null)}>Cancelar</Button>
